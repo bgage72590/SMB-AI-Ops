@@ -32,3 +32,6 @@ next-env.d.ts
 
 # data (runtime-generated)
 data/store.json
+data/store.sqlite
+data/store.sqlite-shm
+data/store.sqlite-wal
