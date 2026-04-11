@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+type DbConnection = Database.Database;
 import type {
   Contact,
   Deal,
@@ -14,6 +13,7 @@ import type {
   StoreShape,
   User,
 } from "./types";
+import { closeConnection, getConnection } from "./db";
 import { seedStore } from "./seed";
 
 // SQLite-backed store. Every user-owned table carries a `userId` foreign
@@ -26,29 +26,18 @@ import { seedStore } from "./seed";
 // The DB file lives at ./data/store.sqlite. On first boot we create all
 // tables (and, for pre-auth installs, migrate existing rows onto a legacy
 // owner user — see migrateLegacyData).
+//
+// Connection management (open/close/cache) lives in ./db so this file
+// stays focused on schema + queries. See docs/postgres-migration.md.
 
-// Tests (and local tinkering) can override the data directory via
-// SMB_AI_OPS_DATA_DIR so multiple stores can coexist without clobbering
-// ./data/store.sqlite. We read the env var at connection time, not at
-// module load, so tests can set it per-suite via __resetDbForTests().
-function dataDir(): string {
-  return process.env.SMB_AI_OPS_DATA_DIR || path.join(process.cwd(), "data");
-}
-
-let _db: Database.Database | null = null;
-
-function db(): Database.Database {
-  if (_db) return _db;
-  const dir = dataDir();
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  const conn = new Database(path.join(dir, "store.sqlite"));
-  conn.pragma("journal_mode = WAL");
-  conn.pragma("foreign_keys = ON");
-  migrate(conn);
-  _db = conn;
-  return conn;
+function db(): DbConnection {
+  return getConnection({
+    onOpen: (conn) => {
+      conn.pragma("journal_mode = WAL");
+      conn.pragma("foreign_keys = ON");
+      migrate(conn);
+    },
+  });
 }
 
 /**
@@ -57,10 +46,7 @@ function db(): Database.Database {
  * through a public entry point — tests reach in for this.
  */
 export function __resetDbForTests(): void {
-  if (_db) {
-    _db.close();
-    _db = null;
-  }
+  closeConnection();
 }
 
 function migrate(conn: Database.Database): void {
