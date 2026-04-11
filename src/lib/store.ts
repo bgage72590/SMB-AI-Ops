@@ -27,22 +27,40 @@ import { seedStore } from "./seed";
 // tables (and, for pre-auth installs, migrate existing rows onto a legacy
 // owner user — see migrateLegacyData).
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_FILE = path.join(DATA_DIR, "store.sqlite");
+// Tests (and local tinkering) can override the data directory via
+// SMB_AI_OPS_DATA_DIR so multiple stores can coexist without clobbering
+// ./data/store.sqlite. We read the env var at connection time, not at
+// module load, so tests can set it per-suite via __resetDbForTests().
+function dataDir(): string {
+  return process.env.SMB_AI_OPS_DATA_DIR || path.join(process.cwd(), "data");
+}
 
 let _db: Database.Database | null = null;
 
 function db(): Database.Database {
   if (_db) return _db;
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  const dir = dataDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
-  const conn = new Database(DB_FILE);
+  const conn = new Database(path.join(dir, "store.sqlite"));
   conn.pragma("journal_mode = WAL");
   conn.pragma("foreign_keys = ON");
   migrate(conn);
   _db = conn;
   return conn;
+}
+
+/**
+ * Test hook: close the cached connection so the next db() call reopens
+ * against whatever SMB_AI_OPS_DATA_DIR currently points at. Not exported
+ * through a public entry point — tests reach in for this.
+ */
+export function __resetDbForTests(): void {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
 }
 
 function migrate(conn: Database.Database): void {
