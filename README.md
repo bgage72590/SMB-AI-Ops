@@ -128,6 +128,21 @@ against a different body. Postmark doesn't sign inbound webhooks natively,
 so this is meant to pair with a signing proxy (or any other provider whose
 webhooks are HMAC-signed).
 
+### Scheduling link (Cal.com / Calendly / etc.)
+
+Set `SCHEDULING_LINK` in `.env` to your self-serve booking URL:
+
+```
+SCHEDULING_LINK=https://cal.com/your-handle/intro
+```
+
+When the AI drafts a follow-up for an email that's about booking a call,
+demo, or intro, it will include that link verbatim in the reply instead of
+asking the owner to propose times. The link is passed to the drafter on
+every run — the model decides whether it's appropriate based on the triage
+category. Leave it unset and the drafter falls back to "happy to send a
+few times that work".
+
 ### Option 2 — raw POST
 
 `POST /api/inbox` accepts a JSON body matching the `IngestSchema` in
@@ -151,10 +166,10 @@ curl -X POST http://localhost:3000/api/inbox \
 
 The MVP is deliberately narrow. Obvious next steps:
 
-- Calendar tool for the scheduling category (Cal.com or Google Calendar).
+- Two-way calendar integration (actually propose times from a live calendar,
+  not just hand out a booking link).
 - Multi-user support + auth.
 - Graduate persistence from SQLite to Postgres when multi-user lands.
-- HMAC-based Postmark signature verification (currently shared-secret only).
 
 ## License
 

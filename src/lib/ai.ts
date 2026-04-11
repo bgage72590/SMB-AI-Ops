@@ -238,6 +238,10 @@ Rules:
 - Lead with the concrete next step, not pleasantries.
 - Never invent facts, prices, or timelines that aren't in the context.
 - Sign off with "— [Owner]" as a placeholder the user will replace.
+- If a "Scheduling link" is provided in the context AND the reply is about
+  scheduling a call, meeting, demo, or intro, include the link verbatim on
+  its own line and tell them to grab any slot that works. Do NOT invent or
+  paraphrase the URL. If no link is provided, offer to send times yourself.
 - Output JSON only, via the provided tool.`;
 
 const DRAFT_TOOL = {
@@ -265,12 +269,28 @@ const DraftSchema = z.object({
 
 export type FollowUpDraft = z.infer<typeof DraftSchema>;
 
-export async function draftFollowUp(input: {
+export interface DraftFollowUpInput {
   contact: Contact;
   deal?: Deal;
   lastEmail?: Email;
   context?: string;
-}): Promise<FollowUpDraft> {
+  /**
+   * Optional self-serve scheduling URL (e.g. a Cal.com or Calendly link).
+   * When provided, the model is instructed to include it verbatim on
+   * scheduling-flavored replies instead of asking the owner to propose times.
+   */
+  schedulingLink?: string;
+  /**
+   * Triage category for the email this draft is replying to. Used purely as
+   * a hint to the model so it can decide whether a scheduling link is
+   * relevant.
+   */
+  category?: EmailCategory;
+}
+
+export async function draftFollowUp(
+  input: DraftFollowUpInput
+): Promise<FollowUpDraft> {
   if (!isAIConfigured()) return heuristicDraft(input);
   try {
     const response = await client().messages.create({
@@ -308,12 +328,7 @@ export async function draftFollowUp(input: {
   }
 }
 
-function buildDraftContext(input: {
-  contact: Contact;
-  deal?: Deal;
-  lastEmail?: Email;
-  context?: string;
-}): string {
+function buildDraftContext(input: DraftFollowUpInput): string {
   const parts: string[] = [];
   parts.push(`Contact: ${input.contact.name} <${input.contact.email}>`);
   if (input.contact.company) parts.push(`Company: ${input.contact.company}`);
@@ -322,6 +337,12 @@ function buildDraftContext(input: {
       `Deal: ${input.deal.title} — stage=${input.deal.stage}, amount=${input.deal.amount} ${input.deal.currency}`
     );
     if (input.deal.nextStep) parts.push(`Next step: ${input.deal.nextStep}`);
+  }
+  if (input.category) {
+    parts.push(`Triage category: ${input.category}`);
+  }
+  if (input.schedulingLink) {
+    parts.push(`Scheduling link: ${input.schedulingLink}`);
   }
   if (input.lastEmail) {
     parts.push("");
@@ -337,32 +358,48 @@ function buildDraftContext(input: {
   return parts.join("\n");
 }
 
-function heuristicDraft(input: {
-  contact: Contact;
-  deal?: Deal;
-  lastEmail?: Email;
-}): FollowUpDraft {
+function heuristicDraft(input: DraftFollowUpInput): FollowUpDraft {
   const firstName = input.contact.name.split(" ")[0];
-  const body = [
-    `Hi ${firstName},`,
-    "",
-    input.deal
-      ? `Circling back on ${input.deal.title}. Where did things land on your side?`
-      : `Just checking in — anything I can help unblock this week?`,
-    "",
-    `Happy to jump on a quick call if easier.`,
-    "",
-    "— [Owner]",
-  ].join("\n");
+  const isScheduling = input.category === "scheduling";
+  const lines: string[] = [`Hi ${firstName},`, ""];
+
+  if (isScheduling && input.schedulingLink) {
+    lines.push(
+      `Happy to jump on a call — grab whatever slot works here:`,
+      input.schedulingLink
+    );
+  } else if (isScheduling) {
+    lines.push(`Happy to jump on a call. What does your week look like?`);
+  } else if (input.deal) {
+    lines.push(
+      `Circling back on ${input.deal.title}. Where did things land on your side?`
+    );
+  } else {
+    lines.push(`Just checking in — anything I can help unblock this week?`);
+  }
+
+  if (!isScheduling) {
+    lines.push("");
+    if (input.schedulingLink) {
+      lines.push(`If it's easier, grab any slot here: ${input.schedulingLink}`);
+    } else {
+      lines.push(`Happy to jump on a quick call if easier.`);
+    }
+  }
+
+  lines.push("", "— [Owner]");
+
   return {
     subject: input.lastEmail
       ? `Re: ${input.lastEmail.subject}`
       : input.deal
         ? `Quick check-in — ${input.deal.title}`
         : "Quick check-in",
-    body,
-    reason: input.deal
-      ? `Deal "${input.deal.title}" has gone quiet.`
-      : "Maintaining contact with an active relationship.",
+    body: lines.join("\n"),
+    reason: isScheduling
+      ? "They asked to find a time — sending the scheduling link."
+      : input.deal
+        ? `Deal "${input.deal.title}" has gone quiet.`
+        : "Maintaining contact with an active relationship.",
   };
 }

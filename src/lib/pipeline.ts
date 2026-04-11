@@ -90,10 +90,18 @@ export async function processEmail(email: Email): Promise<PipelineResult> {
     const contact = getContact(contactId);
     const deal = dealId ? getDeal(dealId) : undefined;
     if (contact) {
+      // Pass the owner's self-serve scheduling link (Cal.com, Calendly, etc.)
+      // when it's configured. The model decides whether to include it based
+      // on the triage category — we hand it over unconditionally rather than
+      // gating on `category === "scheduling"` because deal_update/new_lead
+      // replies often end with "let's find time" too.
+      const schedulingLink = process.env.SCHEDULING_LINK?.trim() || undefined;
       const draft = await draftFollowUp({
         contact,
         deal,
         lastEmail: email,
+        category: triage.category,
+        schedulingLink,
       });
       const created = createFollowUp({
         contactId,
