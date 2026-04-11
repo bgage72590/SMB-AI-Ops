@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "./ui";
 
 interface Props {
   id: string;
@@ -57,47 +58,51 @@ export function FollowUpActions({ id, currentStatus, canSend }: Props) {
   }
 
   if (currentStatus === "sent") {
-    return <span className="text-xs text-emerald-700 font-medium">Sent</span>;
+    return <span className="text-xs text-success font-medium">Sent</span>;
   }
   if (currentStatus === "dismissed") {
-    return <span className="text-xs text-ink-400">Dismissed</span>;
+    return <span className="text-xs text-fg-subtle">Dismissed</span>;
   }
 
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
         {canSend ? (
-          <button
+          <Button
             type="button"
+            variant="primary"
+            size="sm"
             onClick={dispatchSend}
+            loading={loading === "send"}
             disabled={loading !== null}
-            className="px-2.5 py-1 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent/90 disabled:opacity-50"
             title="Send via Postmark"
           >
-            {loading === "send" ? "Sending..." : "Send"}
-          </button>
+            {loading === "send" ? "Sending…" : "Send"}
+          </Button>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="primary"
+            size="sm"
             onClick={() => patchStatus("sent")}
             disabled={loading !== null}
-            className="px-2.5 py-1 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent/90 disabled:opacity-50"
             title="Mark this follow-up as sent (no provider configured)"
           >
-            {loading === "sent" ? "..." : "Mark sent"}
-          </button>
+            {loading === "sent" ? "…" : "Mark sent"}
+          </Button>
         )}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => patchStatus("dismissed")}
           disabled={loading !== null}
-          className="px-2.5 py-1 text-xs font-medium rounded-md bg-ink-50 text-ink-600 hover:bg-ink-100 disabled:opacity-50"
         >
-          {loading === "dismissed" ? "..." : "Dismiss"}
-        </button>
+          {loading === "dismissed" ? "…" : "Dismiss"}
+        </Button>
       </div>
       {error && (
-        <span className="text-[11px] text-rose-600 max-w-xs text-right">
+        <span className="text-[11px] text-danger max-w-xs text-right">
           {error}
         </span>
       )}

@@ -5,12 +5,19 @@ import { AuthError, requireUserForApi } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
+const STAGES = [
+  "inquiry",
+  "quoted",
+  "scheduled",
+  "in_progress",
+  "completed",
+  "lost",
+] as const;
+
 const CreateSchema = z.object({
   title: z.string().min(1),
   contactId: z.string().min(1),
-  stage: z
-    .enum(["lead", "qualified", "proposal", "negotiation", "won", "lost"])
-    .optional(),
+  stage: z.enum(STAGES).optional(),
   amount: z.number().nonnegative().optional(),
   currency: z.string().optional(),
   nextStep: z.string().optional(),
@@ -18,9 +25,7 @@ const CreateSchema = z.object({
 
 const UpdateSchema = z.object({
   id: z.string().min(1),
-  stage: z
-    .enum(["lead", "qualified", "proposal", "negotiation", "won", "lost"])
-    .optional(),
+  stage: z.enum(STAGES).optional(),
   amount: z.number().nonnegative().optional(),
   nextStep: z.string().optional(),
   title: z.string().optional(),

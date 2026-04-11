@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { StoreShape } from "./types";
 
-// Sample data used to populate a freshly-created user's workspace. Every
-// row carries the new user's id so it shows up scoped under their account.
-// Emails are intentionally left `processed: false` so the AI pipeline has
-// something to work on the first time they hit "Process inbox".
+// Sample data used to populate a freshly-created user's workspace.
+// We seed a fictional local service business ("Willow Lane Salon") so
+// new signups immediately see what the product looks like in use —
+// real-looking clients, real-looking jobs, and a handful of unprocessed
+// emails the AI pipeline can triage on their first click of "Process
+// inbox". Every row carries the new user's id so the rows show up
+// scoped under their account.
 
 const DAY = 86_400_000;
 
@@ -12,93 +15,123 @@ export function seedStore(userId: string): StoreShape {
   const now = Date.now();
   const iso = (offsetMs: number) => new Date(now - offsetMs).toISOString();
 
-  const contactAcmeId = randomUUID();
-  const contactRiverId = randomUUID();
-  const contactBoltId = randomUUID();
+  const clientSarahId = randomUUID();
+  const clientMayaId = randomUUID();
+  const clientEliseId = randomUUID();
+  const clientJordanId = randomUUID();
 
-  const dealAcmeId = randomUUID();
-  const dealRiverId = randomUUID();
+  const jobSarahId = randomUUID();
+  const jobMayaId = randomUUID();
+  const jobEliseId = randomUUID();
 
   return {
     contacts: [
       {
-        id: contactAcmeId,
+        id: clientSarahId,
         userId,
-        name: "Marta Chen",
-        email: "marta@acme-hvac.com",
-        company: "Acme HVAC",
-        phone: "+1 415 555 0102",
-        notes: "Owns a 12-person HVAC shop. Wants to replace a spreadsheet workflow.",
-        createdAt: iso(14 * DAY),
+        name: "Sarah Nguyen",
+        email: "sarah.nguyen@gmail.com",
+        company: "",
+        phone: "+1 415 555 0118",
+        notes:
+          "Regular — balayage every 10-12 weeks. Prefers Saturday mornings.",
+        createdAt: iso(90 * DAY),
+        updatedAt: iso(2 * DAY),
+      },
+      {
+        id: clientMayaId,
+        userId,
+        name: "Maya Patel",
+        email: "maya.p@outlook.com",
+        company: "",
+        phone: "+1 415 555 0142",
+        notes:
+          "New client this spring. Color correction in progress — 3 sessions scoped.",
+        createdAt: iso(40 * DAY),
         updatedAt: iso(1 * DAY),
       },
       {
-        id: contactRiverId,
+        id: clientEliseId,
         userId,
-        name: "Devon Patel",
-        email: "devon@riverside-legal.com",
-        company: "Riverside Legal",
-        phone: "+1 212 555 0144",
-        notes: "Managing partner, 4 attorneys. Deal stalled last week.",
-        createdAt: iso(30 * DAY),
-        updatedAt: iso(8 * DAY),
+        name: "Elise Rivera",
+        email: "elise.rivera@fastmail.com",
+        company: "",
+        phone: "+1 415 555 0173",
+        notes:
+          "Wedding party — 4 people booked for the morning of the event.",
+        createdAt: iso(20 * DAY),
+        updatedAt: iso(4 * DAY),
       },
       {
-        id: contactBoltId,
+        id: clientJordanId,
         userId,
-        name: "Priya Osei",
-        email: "priya@boltbakery.co",
-        company: "Bolt Bakery",
-        phone: "+1 503 555 0177",
-        notes: "Wholesale bakery, 3 locations. Sent invoice last month.",
-        createdAt: iso(60 * DAY),
-        updatedAt: iso(20 * DAY),
+        name: "Jordan Ashby",
+        email: "jordan.ashby@protonmail.com",
+        company: "",
+        phone: "+1 415 555 0199",
+        notes: "First inquiry — found us through Instagram.",
+        createdAt: iso(1 * DAY),
+        updatedAt: iso(1 * DAY),
       },
     ],
     deals: [
       {
-        id: dealAcmeId,
+        id: jobSarahId,
         userId,
-        title: "Acme HVAC — Ops rollout",
-        contactId: contactAcmeId,
-        stage: "proposal",
-        amount: 12_000,
+        title: "Balayage touch-up + trim — Sarah",
+        contactId: clientSarahId,
+        stage: "scheduled",
+        amount: 285,
         currency: "USD",
-        nextStep: "Send revised SOW",
-        lastActivityAt: iso(1 * DAY),
+        nextStep: "Confirm the Saturday 10am slot",
+        lastActivityAt: iso(2 * DAY),
         createdAt: iso(14 * DAY),
+        updatedAt: iso(2 * DAY),
+      },
+      {
+        id: jobMayaId,
+        userId,
+        title: "Color correction (session 2 of 3) — Maya",
+        contactId: clientMayaId,
+        stage: "in_progress",
+        amount: 450,
+        currency: "USD",
+        nextStep: "Book session 3 — 3 weeks out from last visit",
+        lastActivityAt: iso(1 * DAY),
+        createdAt: iso(38 * DAY),
         updatedAt: iso(1 * DAY),
       },
       {
-        id: dealRiverId,
+        id: jobEliseId,
         userId,
-        title: "Riverside Legal — pilot",
-        contactId: contactRiverId,
-        stage: "negotiation",
-        amount: 4_800,
+        title: "Bridal party updos (4 people) — Elise",
+        contactId: clientEliseId,
+        stage: "quoted",
+        amount: 920,
         currency: "USD",
-        nextStep: "Follow up on pricing",
-        lastActivityAt: iso(9 * DAY),
-        createdAt: iso(30 * DAY),
-        updatedAt: iso(9 * DAY),
+        nextStep: "Send quote + 50% deposit link",
+        lastActivityAt: iso(4 * DAY),
+        createdAt: iso(18 * DAY),
+        updatedAt: iso(4 * DAY),
       },
     ],
     emails: [
       {
         id: randomUUID(),
         userId,
-        from: "marta@acme-hvac.com",
-        fromName: "Marta Chen",
-        to: "you@yourshop.com",
-        subject: "Re: revised proposal",
+        from: "sarah.nguyen@gmail.com",
+        fromName: "Sarah Nguyen",
+        to: "willow@yourshop.com",
+        subject: "Saturday 10am still good?",
         body: [
-          "Hey,",
+          "Hi!",
           "",
-          "Thanks for the walkthrough yesterday. The team is on board with the scope but",
-          "we'd like to push the start date to the first week of next month. Can you send",
-          "an updated SOW reflecting that? Also — do you integrate with ServiceTitan?",
+          "Just confirming my balayage appointment for Saturday at 10am.",
+          "Also — do you have that toning shampoo you mentioned last time? Want to",
+          "grab one if so.",
           "",
-          "— Marta",
+          "Thanks,",
+          "Sarah",
         ].join("\n"),
         receivedAt: iso(3 * 60 * 60 * 1000),
         processed: false,
@@ -106,36 +139,36 @@ export function seedStore(userId: string): StoreShape {
       {
         id: randomUUID(),
         userId,
-        from: "devon@riverside-legal.com",
-        fromName: "Devon Patel",
-        to: "you@yourshop.com",
-        subject: "Quick question on pricing",
+        from: "elise.rivera@fastmail.com",
+        fromName: "Elise Rivera",
+        to: "willow@yourshop.com",
+        subject: "Re: wedding party quote",
         body: [
           "Hi,",
           "",
-          "We reviewed the quote internally. The per-seat cost is a little higher than",
-          "we expected. Is there any flexibility if we commit to a 12-month term?",
+          "Thanks for getting back to me! The quote looks good. How do we handle",
+          "the deposit — is there a link you can send over? Also, is there a",
+          "chance we could do a trial run for me the week before?",
           "",
-          "Thanks,",
-          "Devon",
+          "— Elise",
         ].join("\n"),
-        receivedAt: iso(26 * 60 * 60 * 1000),
+        receivedAt: iso(22 * 60 * 60 * 1000),
         processed: false,
       },
       {
         id: randomUUID(),
         userId,
-        from: "ap@boltbakery.co",
-        fromName: "Bolt Bakery AP",
-        to: "you@yourshop.com",
-        subject: "Invoice #2041 — paid",
+        from: "payouts@square.com",
+        fromName: "Square",
+        to: "willow@yourshop.com",
+        subject: "Payout of $1,842.50 sent",
         body: [
-          "Hi,",
+          "Hi Willow Lane Salon,",
           "",
-          "Just a note that invoice #2041 for $1,250 has been paid via ACH today.",
-          "Confirmation number BB-99221.",
+          "A payout of $1,842.50 was just sent to your linked bank account,",
+          "covering sales from April 3 through April 9.",
           "",
-          "— Priya / Bolt Bakery",
+          "— Square",
         ].join("\n"),
         receivedAt: iso(2 * DAY),
         processed: false,
@@ -143,18 +176,20 @@ export function seedStore(userId: string): StoreShape {
       {
         id: randomUUID(),
         userId,
-        from: "hello@newleadco.io",
-        fromName: "Jordan Riggs",
-        to: "you@yourshop.com",
-        subject: "Interested in a demo",
+        from: "jordan.ashby@protonmail.com",
+        fromName: "Jordan Ashby",
+        to: "willow@yourshop.com",
+        subject: "First-time appointment?",
         body: [
           "Hi there,",
           "",
-          "I run operations at a 22-person roofing company in Austin. A friend recommended",
-          "you for automating our email + invoicing workflow. Could we grab 20 minutes",
-          "next week to see a demo?",
+          "I saw your work on Instagram and would love to book a first",
+          "appointment. I'm looking to grow out a pixie cut into a bob and",
+          "could use some help with the in-between stages. What's your",
+          "availability look like over the next couple weeks?",
           "",
-          "— Jordan",
+          "Thanks!",
+          "Jordan",
         ].join("\n"),
         receivedAt: iso(5 * 60 * 60 * 1000),
         processed: false,

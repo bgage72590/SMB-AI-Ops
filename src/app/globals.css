@@ -2,20 +2,130 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens.
+ *
+ * Light + dark palettes live on :root and .dark respectively, so any
+ * component that consumes a token via Tailwind (e.g. `bg-surface`,
+ * `text-fg`) follows the active theme without per-component forks.
+ *
+ * Naming convention:
+ *   --bg              global canvas (one level behind surface)
+ *   --surface         card + panel background
+ *   --surface-2       lifted/hovered surface
+ *   --border          hairline borders
+ *   --border-strong   stronger dividers
+ *   --fg              primary text
+ *   --fg-muted        secondary text
+ *   --fg-subtle       tertiary / hint text
+ *   --accent          brand accent (single hue)
+ *   --accent-fg       foreground on accent
+ *   --accent-soft     tinted backgrounds for accent fills
+ *   --ring            focus ring
+ *   --success/warn/danger/info for state chips
+ */
 :root {
   color-scheme: light;
+
+  --bg: 44 30% 97%;           /* warm off-white */
+  --surface: 0 0% 100%;
+  --surface-2: 40 25% 96%;
+  --border: 36 14% 90%;
+  --border-strong: 36 10% 82%;
+
+  --fg: 222 22% 14%;          /* soft charcoal */
+  --fg-muted: 222 12% 38%;
+  --fg-subtle: 222 10% 54%;
+
+  --accent: 178 62% 38%;      /* teal */
+  --accent-fg: 0 0% 100%;
+  --accent-soft: 178 55% 92%;
+
+  --ring: 178 62% 42%;
+
+  --success: 152 55% 36%;
+  --success-soft: 152 55% 92%;
+  --warning: 32 85% 44%;
+  --warning-soft: 36 90% 94%;
+  --danger: 356 72% 48%;
+  --danger-soft: 356 85% 95%;
+  --info: 212 70% 46%;
+  --info-soft: 212 85% 94%;
+
+  --shadow-card: 0 1px 2px rgba(17, 23, 42, 0.04),
+    0 8px 24px -12px rgba(17, 23, 42, 0.12);
+  --shadow-pop: 0 4px 12px -2px rgba(17, 23, 42, 0.08),
+    0 20px 40px -16px rgba(17, 23, 42, 0.18);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --bg: 224 20% 7%;
+  --surface: 224 18% 10%;
+  --surface-2: 224 16% 13%;
+  --border: 224 12% 18%;
+  --border-strong: 224 10% 26%;
+
+  --fg: 44 30% 96%;
+  --fg-muted: 220 12% 72%;
+  --fg-subtle: 220 10% 55%;
+
+  --accent: 178 60% 52%;
+  --accent-fg: 224 20% 7%;
+  --accent-soft: 178 45% 18%;
+
+  --ring: 178 60% 55%;
+
+  --success: 152 50% 55%;
+  --success-soft: 152 40% 16%;
+  --warning: 32 90% 62%;
+  --warning-soft: 32 55% 18%;
+  --danger: 356 75% 62%;
+  --danger-soft: 356 55% 20%;
+  --info: 212 80% 65%;
+  --info-soft: 212 45% 18%;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 4px 12px -2px rgba(0, 0, 0, 0.5),
+    0 20px 40px -16px rgba(0, 0, 0, 0.7);
 }
 
 html,
 body {
-  background: #f6f7f9;
-  color: #11172a;
+  background: hsl(var(--bg));
+  color: hsl(var(--fg));
 }
 
 body {
   font-feature-settings: "cv11", "ss01", "ss02";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Themed focus ring that replaces the browser default. */
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 .card {
-  @apply bg-white rounded-xl shadow-card border border-ink-100;
+  background: hsl(var(--surface));
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+
+/* Scrollbar softening for the dark theme. */
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-strong));
+  border-radius: 8px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: hsl(var(--bg));
 }

@@ -1,4 +1,5 @@
-import type { Contact, Deal, Email, FollowUp, User } from "./types";
+import type { User } from "./types";
+import { OPEN_DEAL_STAGES } from "./types";
 import {
   listAllUsers,
   listContacts,
@@ -24,7 +25,9 @@ export interface DigestStats {
   newEmails: number;
   newContacts: number;
   pendingFollowUps: number;
+  /** Sum of amounts on open jobs (inquiry/quoted/scheduled/in_progress). */
   openPipelineValue: number;
+  /** Count of jobs in each open stage. */
   dealsByStage: Record<string, number>;
   topLeads: Array<{ name: string; summary: string }>;
 }
@@ -62,7 +65,7 @@ export function computeStats(userId: string, asOf: number = Date.now()): DigestS
   const newContacts = contacts.filter((c) => isRecent(c.createdAt, since)).length;
   const pendingFollowUps = followUps.filter((f) => f.status === "draft").length;
 
-  const openStages = new Set(["lead", "qualified", "proposal", "negotiation"]);
+  const openStages: ReadonlySet<string> = new Set(OPEN_DEAL_STAGES);
   const openDeals = deals.filter((d) => openStages.has(d.stage));
   const openPipelineValue = openDeals.reduce((sum, d) => sum + d.amount, 0);
 
@@ -147,11 +150,11 @@ function heuristicHeadline(stats: DigestStats): string {
   }
   if (stats.openPipelineValue > 0) {
     parts.push(
-      `Open pipeline is worth $${stats.openPipelineValue.toLocaleString()}`
+      `Open jobs are worth $${stats.openPipelineValue.toLocaleString()}`
     );
   }
   if (parts.length === 0) {
-    return "Quiet week. Nothing new came through, but your open pipeline is ready whenever you want to push it forward.";
+    return "Quiet week. Nothing new came through, but your open jobs are ready whenever you want to push them forward.";
   }
   return parts.join(". ") + ".";
 }
@@ -164,15 +167,15 @@ export function renderDigestBody(user: User, stats: DigestStats, headline: strin
   lines.push("");
   lines.push("— This week at a glance —");
   lines.push(`• New emails: ${stats.newEmails}`);
-  lines.push(`• New contacts: ${stats.newContacts}`);
+  lines.push(`• New clients: ${stats.newContacts}`);
   lines.push(`• Draft follow-ups waiting: ${stats.pendingFollowUps}`);
   lines.push(
-    `• Open pipeline value: $${stats.openPipelineValue.toLocaleString()}`
+    `• Open job value: $${stats.openPipelineValue.toLocaleString()}`
   );
 
   if (Object.keys(stats.dealsByStage).length > 0) {
     lines.push("");
-    lines.push("— Open deals by stage —");
+    lines.push("— Open jobs by stage —");
     for (const [stage, count] of Object.entries(stats.dealsByStage)) {
       lines.push(`• ${stage}: ${count}`);
     }
@@ -180,7 +183,7 @@ export function renderDigestBody(user: User, stats: DigestStats, headline: strin
 
   if (stats.topLeads.length > 0) {
     lines.push("");
-    lines.push("— New leads to look at —");
+    lines.push("— New inquiries to look at —");
     for (const lead of stats.topLeads) {
       lines.push(`• ${lead.name}: ${lead.summary}`);
     }

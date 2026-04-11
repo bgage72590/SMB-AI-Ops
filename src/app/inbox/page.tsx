@@ -1,110 +1,230 @@
+import Link from "next/link";
 import { ProcessButton } from "@/components/ProcessButton";
 import {
   CategoryBadge,
   PriorityBadge,
 } from "@/components/Badge";
+import {
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  PageHeader,
+} from "@/components/ui";
 import { listEmails } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
+import type { Email, EmailCategory } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default function InboxPage() {
+type Filter = "all" | "unprocessed" | "new_lead" | "deal_update";
+
+const FILTERS: Array<{ id: Filter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "unprocessed", label: "Unprocessed" },
+  { id: "new_lead", label: "New inquiries" },
+  { id: "deal_update", label: "Job updates" },
+];
+
+function applyFilter(emails: Email[], filter: Filter): Email[] {
+  if (filter === "all") return emails;
+  if (filter === "unprocessed") return emails.filter((e) => !e.processed);
+  return emails.filter((e) => e.category === (filter as EmailCategory));
+}
+
+export default function InboxPage({
+  searchParams,
+}: {
+  searchParams?: { filter?: string };
+}) {
   const user = requireUser();
   const emails = listEmails(user.id);
   const unprocessed = emails.filter((e) => !e.processed);
   const processed = emails.filter((e) => e.processed);
 
+  const activeFilter = (
+    FILTERS.some((f) => f.id === searchParams?.filter)
+      ? searchParams!.filter
+      : "all"
+  ) as Filter;
+
+  const filteredUnprocessed = applyFilter(unprocessed, activeFilter);
+  const filteredProcessed = applyFilter(processed, activeFilter);
+  const showUnprocessed = activeFilter !== "deal_update";
+  const showProcessed = activeFilter !== "unprocessed";
+
   return (
     <div className="space-y-8">
-      <section className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink-900">Inbox</h1>
-          <p className="text-ink-500 mt-1">
-            {unprocessed.length} unprocessed · {processed.length} triaged by AI
-          </p>
-        </div>
-        <ProcessButton />
-      </section>
+      <PageHeader
+        eyebrow="Inbox"
+        title="Inbox"
+        description={`${unprocessed.length} waiting · ${processed.length} triaged by AI`}
+        actions={<ProcessButton />}
+      />
 
-      {unprocessed.length > 0 && (
-        <section>
-          <h2 className="text-sm uppercase tracking-wide text-ink-400 mb-3">
-            Waiting for triage
-          </h2>
-          <ul className="space-y-3">
-            {unprocessed.map((email) => (
-              <li key={email.id} className="card p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="font-medium text-ink-900">
-                      {email.fromName || email.from}
-                      <span className="text-ink-400 font-normal">
-                        {" "}· {email.from}
-                      </span>
-                    </div>
-                    <div className="text-sm text-ink-700 mt-1">
-                      {email.subject}
-                    </div>
-                    <pre className="text-xs text-ink-500 mt-2 whitespace-pre-wrap font-sans line-clamp-3">
-                      {email.body}
-                    </pre>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className="text-xs text-ink-400">
-                      {formatRelative(email.receivedAt)}
-                    </span>
-                    <ProcessButton
-                      emailId={email.id}
-                      label="Triage"
-                      variant="ghost"
-                    />
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {/* Filter chips — server-driven via ?filter= search param. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {FILTERS.map((f) => {
+          const isActive = f.id === activeFilter;
+          const href = f.id === "all" ? "/inbox" : `/inbox?filter=${f.id}`;
+          return (
+            <Link
+              key={f.id}
+              href={href}
+              className={
+                "inline-flex items-center h-8 px-3 rounded-full text-xs font-medium border transition-colors " +
+                (isActive
+                  ? "bg-accent text-accent-fg border-accent"
+                  : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
+              }
+            >
+              {f.label}
+            </Link>
+          );
+        })}
+      </div>
+
+      {emails.length === 0 && (
+        <Card>
+          <CardBody>
+            <EmptyState
+              icon="📬"
+              title="Your inbox is empty"
+              description="Once inbound email is routed in (or once the seed is loaded), messages will appear here for the AI to triage."
+              action={<ProcessButton label="Process inbox" />}
+            />
+          </CardBody>
+        </Card>
       )}
 
-      {processed.length > 0 && (
-        <section>
-          <h2 className="text-sm uppercase tracking-wide text-ink-400 mb-3">
-            Triaged
-          </h2>
-          <ul className="space-y-3">
-            {processed.map((email) => (
-              <li key={email.id} className="card p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-ink-900">
-                        {email.fromName || email.from}
-                      </span>
-                      {email.category && (
-                        <CategoryBadge category={email.category} />
-                      )}
-                      {email.priority && (
-                        <PriorityBadge priority={email.priority} />
-                      )}
-                    </div>
-                    <div className="text-sm text-ink-700 mt-1">
-                      {email.subject}
-                    </div>
-                    {email.summary && (
-                      <div className="text-sm text-ink-600 mt-2 italic">
-                        “{email.summary}”
+      {emails.length > 0 && showUnprocessed && (
+        <Card>
+          <CardHeader
+            title="Waiting for triage"
+            subtitle={
+              filteredUnprocessed.length === 0
+                ? "Nothing waiting"
+                : `${filteredUnprocessed.length} message${
+                    filteredUnprocessed.length === 1 ? "" : "s"
+                  } the AI hasn't looked at yet`
+            }
+            action={
+              filteredUnprocessed.length > 0 ? (
+                <ProcessButton
+                  label={`Process ${filteredUnprocessed.length}`}
+                />
+              ) : undefined
+            }
+          />
+          <CardBody>
+            {filteredUnprocessed.length === 0 ? (
+              <EmptyState
+                icon="✓"
+                title="All clear"
+                description="Every message in this view has been triaged."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {filteredUnprocessed.map((email) => (
+                  <li
+                    key={email.id}
+                    className="rounded-lg border border-border bg-surface-2/50 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="font-medium text-fg">
+                            {email.fromName || email.from}
+                          </span>
+                          {email.fromName && (
+                            <span className="text-xs text-fg-subtle">
+                              {email.from}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-fg-muted mt-1 font-medium">
+                          {email.subject}
+                        </div>
+                        <p className="text-xs text-fg-subtle mt-2 line-clamp-3 whitespace-pre-wrap">
+                          {email.body}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                  <span className="text-xs text-ink-400 whitespace-nowrap">
-                    {formatRelative(email.receivedAt)}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <span className="text-[11px] text-fg-subtle whitespace-nowrap">
+                          {formatRelative(email.receivedAt)}
+                        </span>
+                        <ProcessButton
+                          emailId={email.id}
+                          label="Triage"
+                          variant="ghost"
+                        />
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {emails.length > 0 && showProcessed && (
+        <Card>
+          <CardHeader
+            title="Triaged by AI"
+            subtitle={
+              filteredProcessed.length === 0
+                ? "Nothing triaged for this filter"
+                : `${filteredProcessed.length} message${
+                    filteredProcessed.length === 1 ? "" : "s"
+                  } already categorized`
+            }
+          />
+          <CardBody>
+            {filteredProcessed.length === 0 ? (
+              <EmptyState
+                icon="✨"
+                title="Nothing here yet"
+                description="As the AI processes inbound mail, it shows up here with a category + priority chip."
+              />
+            ) : (
+              <ul className="divide-y divide-border">
+                {filteredProcessed.map((email) => (
+                  <li
+                    key={email.id}
+                    className="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {email.category && (
+                          <CategoryBadge category={email.category} />
+                        )}
+                        {email.priority && (
+                          <PriorityBadge priority={email.priority} />
+                        )}
+                      </div>
+                      <div className="text-sm font-medium text-fg mt-1.5 truncate">
+                        {email.fromName || email.from}
+                      </div>
+                      <div className="text-xs text-fg-muted truncate">
+                        {email.subject}
+                      </div>
+                      {email.summary && (
+                        <div className="text-xs text-fg-subtle mt-1 italic line-clamp-2">
+                          &ldquo;{email.summary}&rdquo;
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-fg-subtle whitespace-nowrap shrink-0">
+                      {formatRelative(email.receivedAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
       )}
     </div>
   );

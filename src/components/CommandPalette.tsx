@@ -14,8 +14,8 @@ interface SearchResult {
 }
 
 const KIND_LABELS: Record<Kind, string> = {
-  contact: "Contact",
-  deal: "Deal",
+  contact: "Client",
+  deal: "Job",
   email: "Email",
   followup: "Follow-up",
 };
@@ -142,62 +142,62 @@ export function CommandPalette({ enabled }: { enabled: boolean }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-ink-900/30"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm"
       onClick={close}
       role="dialog"
       aria-modal="true"
       aria-label="Search"
     >
       <div
-        className="w-full max-w-xl rounded-xl bg-white shadow-xl border border-ink-100 overflow-hidden"
+        className="w-full max-w-xl rounded-xl bg-surface shadow-pop border border-border overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 py-3 border-b border-ink-100">
+        <div className="px-4 py-3 border-b border-border">
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onInputKeyDown}
-            placeholder="Search contacts, deals, emails, follow-ups…"
-            className="w-full text-sm outline-none placeholder:text-ink-400"
+            placeholder="Search clients, jobs, emails, follow-ups…"
+            className="w-full text-sm outline-none bg-transparent text-fg placeholder:text-fg-subtle"
           />
         </div>
 
         <div className="max-h-[50vh] overflow-y-auto">
           {query.trim().length < 2 && (
-            <div className="px-4 py-6 text-xs text-ink-500">
+            <div className="px-4 py-6 text-xs text-fg-subtle">
               Type at least 2 characters. Use{" "}
-              <kbd className="px-1.5 py-0.5 text-xs border rounded">↑</kbd>{" "}
-              <kbd className="px-1.5 py-0.5 text-xs border rounded">↓</kbd> to
-              navigate,{" "}
-              <kbd className="px-1.5 py-0.5 text-xs border rounded">Enter</kbd>{" "}
+              <kbd className="px-1.5 py-0.5 text-xs border border-border rounded bg-surface-2">↑</kbd>{" "}
+              <kbd className="px-1.5 py-0.5 text-xs border border-border rounded bg-surface-2">↓</kbd>{" "}
+              to navigate,{" "}
+              <kbd className="px-1.5 py-0.5 text-xs border border-border rounded bg-surface-2">Enter</kbd>{" "}
               to jump,{" "}
-              <kbd className="px-1.5 py-0.5 text-xs border rounded">Esc</kbd> to
-              close.
+              <kbd className="px-1.5 py-0.5 text-xs border border-border rounded bg-surface-2">Esc</kbd>{" "}
+              to close.
             </div>
           )}
           {query.trim().length >= 2 && !loading && results.length === 0 && (
-            <div className="px-4 py-6 text-xs text-ink-500">No matches.</div>
+            <div className="px-4 py-6 text-xs text-fg-subtle">No matches.</div>
           )}
           {results.map((r, i) => (
             <button
               key={`${r.kind}:${r.id}`}
               onMouseEnter={() => setActive(i)}
               onClick={() => onSelect(r)}
-              className={`w-full text-left px-4 py-2.5 flex items-center gap-3 ${
-                i === active ? "bg-ink-50" : "bg-white"
+              className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors ${
+                i === active ? "bg-surface-2" : "bg-transparent"
               }`}
             >
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-500 w-16">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle w-16">
                 {KIND_LABELS[r.kind]}
               </span>
               <span className="flex-1 min-w-0">
-                <span className="block text-sm text-ink-900 truncate">
+                <span className="block text-sm text-fg truncate">
                   {r.title}
                 </span>
                 {r.subtitle && (
-                  <span className="block text-xs text-ink-500 truncate">
+                  <span className="block text-xs text-fg-subtle truncate">
                     {r.subtitle}
                   </span>
                 )}
@@ -206,7 +206,7 @@ export function CommandPalette({ enabled }: { enabled: boolean }) {
           ))}
         </div>
 
-        <div className="px-4 py-2 border-t border-ink-100 text-[11px] text-ink-400 flex items-center justify-between">
+        <div className="px-4 py-2 border-t border-border text-[11px] text-fg-subtle flex items-center justify-between">
           <span>Cmd-K / Ctrl-K to toggle</span>
           {loading && <span>Searching…</span>}
         </div>

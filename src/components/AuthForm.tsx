@@ -57,12 +57,12 @@ export function AuthForm({ mode }: { mode: Mode }) {
   return (
     <div className="max-w-sm mx-auto mt-16">
       <div className="card p-6">
-        <h1 className="text-xl font-semibold text-ink-900">
+        <h1 className="text-xl font-semibold text-fg">
           {isSignup ? "Create your workspace" : "Sign in"}
         </h1>
-        <p className="text-sm text-ink-500 mt-1">
+        <p className="text-sm text-fg-muted mt-1">
           {isSignup
-            ? "A fresh workspace with sample contacts, deals, and emails."
+            ? "A fresh workspace with sample clients, jobs, and emails."
             : "Welcome back."}
         </p>
 
@@ -95,7 +95,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           />
 
           {error && (
-            <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-md px-3 py-2">
+            <div className="text-sm text-danger bg-danger-soft border border-danger/30 rounded-md px-3 py-2">
               {error}
             </div>
           )}
@@ -103,7 +103,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-3 py-2 text-sm font-medium rounded-md bg-accent text-white hover:bg-accent/90 disabled:opacity-50"
+            className="w-full h-9 text-sm font-medium rounded-lg bg-accent text-accent-fg hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             {loading
               ? "…"
@@ -113,7 +113,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           </button>
 
           {!isSignup && (
-            <div className="text-xs text-ink-500 text-center -mt-1">
+            <div className="text-xs text-fg-muted text-center -mt-1">
               <Link href="/forgot" className="text-accent hover:underline">
                 Forgot your password?
               </Link>
@@ -121,7 +121,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           )}
         </form>
 
-        <div className="text-xs text-ink-500 text-center mt-4">
+        <div className="text-xs text-fg-muted text-center mt-4">
           {isSignup ? (
             <>
               Already have an account?{" "}
@@ -153,7 +153,7 @@ function Field(props: {
 }) {
   return (
     <label className="block">
-      <span className="block text-xs font-medium text-ink-600 mb-1">
+      <span className="block text-xs font-medium text-fg-muted mb-1">
         {props.label}
       </span>
       <input
@@ -162,7 +162,7 @@ function Field(props: {
         onChange={(e) => props.onChange(e.target.value)}
         autoComplete={props.autoComplete}
         required={props.required}
-        className="w-full px-3 py-2 text-sm rounded-md border border-ink-200 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        className="w-full h-9 px-3 text-sm rounded-lg border border-border bg-surface text-fg focus:border-accent focus:outline-none focus:ring-2 focus:ring-ring/40"
       />
     </label>
   );

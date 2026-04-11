@@ -13,6 +13,7 @@ import type {
   StoreShape,
   User,
 } from "./types";
+import { LEGACY_STAGE_MAP } from "./types";
 import { closeConnection, getConnection } from "./db";
 import { seedStore } from "./seed";
 
@@ -180,7 +181,21 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "emails", "userId", "TEXT");
   addColumnIfMissing(conn, "followUps", "userId", "TEXT");
 
+  migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
+}
+
+/**
+ * Rewrite pre-rename stage strings to the local-service lifecycle.
+ * Safe to run on every boot — the UPDATEs only touch rows whose stage
+ * value is still one of the legacy names, so re-running is a no-op.
+ */
+function migrateLegacyStageValues(conn: Database.Database): void {
+  const stmt = conn.prepare("UPDATE deals SET stage = ? WHERE stage = ?");
+  for (const [oldStage, newStage] of Object.entries(LEGACY_STAGE_MAP)) {
+    if (oldStage === newStage) continue;
+    stmt.run(newStage, oldStage);
+  }
 }
 
 function addColumnIfMissing(
@@ -996,7 +1011,7 @@ export function findOpenDealForContact(
   const row = db()
     .prepare(
       `SELECT * FROM deals
-       WHERE userId = ? AND contactId = ? AND stage NOT IN ('won', 'lost')
+       WHERE userId = ? AND contactId = ? AND stage NOT IN ('completed', 'lost')
        ORDER BY lastActivityAt DESC
        LIMIT 1`
     )
@@ -1034,7 +1049,7 @@ export function createDeal(
     userId,
     title: input.title,
     contactId: input.contactId,
-    stage: input.stage ?? "lead",
+    stage: input.stage ?? "inquiry",
     amount: input.amount ?? 0,
     currency: input.currency ?? "USD",
     nextStep: input.nextStep,
