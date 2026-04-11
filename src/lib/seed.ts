@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { StoreShape } from "./types";
 
-// Deterministic-ish seed so a freshly cloned repo has something to look at.
-// Emails here are intentionally left `processed: false` so the user can see
-// the AI pipeline actually do work on first visit.
+// Sample data used to populate a freshly-created user's workspace. Every
+// row carries the new user's id so it shows up scoped under their account.
+// Emails are intentionally left `processed: false` so the AI pipeline has
+// something to work on the first time they hit "Process inbox".
 
 const DAY = 86_400_000;
 
-export function seedStore(): StoreShape {
+export function seedStore(userId: string): StoreShape {
   const now = Date.now();
   const iso = (offsetMs: number) => new Date(now - offsetMs).toISOString();
 
@@ -22,6 +23,7 @@ export function seedStore(): StoreShape {
     contacts: [
       {
         id: contactAcmeId,
+        userId,
         name: "Marta Chen",
         email: "marta@acme-hvac.com",
         company: "Acme HVAC",
@@ -32,6 +34,7 @@ export function seedStore(): StoreShape {
       },
       {
         id: contactRiverId,
+        userId,
         name: "Devon Patel",
         email: "devon@riverside-legal.com",
         company: "Riverside Legal",
@@ -42,6 +45,7 @@ export function seedStore(): StoreShape {
       },
       {
         id: contactBoltId,
+        userId,
         name: "Priya Osei",
         email: "priya@boltbakery.co",
         company: "Bolt Bakery",
@@ -54,6 +58,7 @@ export function seedStore(): StoreShape {
     deals: [
       {
         id: dealAcmeId,
+        userId,
         title: "Acme HVAC — Ops rollout",
         contactId: contactAcmeId,
         stage: "proposal",
@@ -66,6 +71,7 @@ export function seedStore(): StoreShape {
       },
       {
         id: dealRiverId,
+        userId,
         title: "Riverside Legal — pilot",
         contactId: contactRiverId,
         stage: "negotiation",
@@ -80,6 +86,7 @@ export function seedStore(): StoreShape {
     emails: [
       {
         id: randomUUID(),
+        userId,
         from: "marta@acme-hvac.com",
         fromName: "Marta Chen",
         to: "you@yourshop.com",
@@ -98,6 +105,7 @@ export function seedStore(): StoreShape {
       },
       {
         id: randomUUID(),
+        userId,
         from: "devon@riverside-legal.com",
         fromName: "Devon Patel",
         to: "you@yourshop.com",
@@ -116,6 +124,7 @@ export function seedStore(): StoreShape {
       },
       {
         id: randomUUID(),
+        userId,
         from: "ap@boltbakery.co",
         fromName: "Bolt Bakery AP",
         to: "you@yourshop.com",
@@ -133,6 +142,7 @@ export function seedStore(): StoreShape {
       },
       {
         id: randomUUID(),
+        userId,
         from: "hello@newleadco.io",
         fromName: "Jordan Riggs",
         to: "you@yourshop.com",

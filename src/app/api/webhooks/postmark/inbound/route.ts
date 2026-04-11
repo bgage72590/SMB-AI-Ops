@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createEmail } from "@/lib/store";
+import { createEmail, findUserByInboundAddress, getFirstUser } from "@/lib/store";
 import { processEmail } from "@/lib/pipeline";
 import {
   verifyInboundAuth,
@@ -19,6 +19,12 @@ export const runtime = "nodejs";
 //     `?token=<secret>`.
 //
 // If neither env var is set, every request is rejected.
+//
+// Routing: after the request is authenticated we need to figure out which
+// user owns the email. We first try to match the `To` address against any
+// user's `inboundAddress` column; if no one claims it, we fall back to the
+// first user in the DB (single-tenant install). If there are no users at
+// all we 503 so Postmark retries after the operator sets up an account.
 export async function POST(request: Request) {
   // HMAC has to verify over the exact bytes we received, so read once as
   // text and parse JSON ourselves below.
@@ -42,6 +48,21 @@ export async function POST(request: Request) {
     );
   }
 
+  const owner =
+    findUserByInboundAddress(payload.To) ??
+    // Fall back to the first user so single-tenant installs "just work"
+    // without anyone ever needing to set inboundAddress.
+    getFirstUser();
+
+  if (!owner) {
+    // No one signed up yet. Return 503 so Postmark queues a retry — once
+    // someone creates an account, the retry will land successfully.
+    return NextResponse.json(
+      { error: "no_workspace_configured" },
+      { status: 503 }
+    );
+  }
+
   // Prefer the plain-text body; fall back to stripped HTML if only HTML was
   // sent. We never store raw HTML — keeps the UI simple and the AI prompt
   // cheap.
@@ -51,7 +72,7 @@ export async function POST(request: Request) {
     stripHtml(payload.HtmlBody || "") ||
     "(empty body)";
 
-  const email = createEmail({
+  const email = createEmail(owner.id, {
     from: payload.From,
     fromName: payload.FromName || payload.FromFull?.Name,
     to: payload.To,
@@ -63,7 +84,7 @@ export async function POST(request: Request) {
   // Run the pipeline synchronously. Postmark retries on non-2xx so we want
   // the side-effects committed before we ack.
   try {
-    const result = await processEmail(email);
+    const result = await processEmail(owner.id, email);
     return NextResponse.json({ ok: true, emailId: email.id, result });
   } catch (err) {
     // The email is already persisted; the pipeline can be re-run later via

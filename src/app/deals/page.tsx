@@ -2,6 +2,7 @@ import { StageBadge } from "@/components/Badge";
 import { getContact, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import type { DealStage } from "@/lib/types";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,8 @@ const COLUMNS: DealStage[] = [
 ];
 
 export default function DealsPage() {
-  const deals = listDeals();
+  const user = requireUser();
+  const deals = listDeals(user.id);
   const byStage: Record<DealStage, typeof deals> = {
     lead: [],
     qualified: [],
@@ -52,7 +54,7 @@ export default function DealsPage() {
                   <li className="text-xs text-ink-300 py-2">empty</li>
                 )}
                 {column.map((deal) => {
-                  const contact = getContact(deal.contactId);
+                  const contact = getContact(user.id, deal.contactId);
                   return (
                     <li
                       key={deal.id}

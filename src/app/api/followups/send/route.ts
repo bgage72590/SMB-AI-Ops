@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getContact, listFollowUps, updateFollowUp } from "@/lib/store";
+import { getContact, getFollowUp, updateFollowUp } from "@/lib/store";
 import { isPostmarkConfigured, sendEmail } from "@/lib/postmark";
+import { AuthError, requireUserForApi } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,16 @@ const SendSchema = z.object({ id: z.string().min(1) });
 // follow-up as "sent". If Postmark isn't configured, returns 412 so the UI
 // can point the user at the setup docs.
 export async function POST(request: Request) {
+  let user;
+  try {
+    user = requireUserForApi();
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = SendSchema.safeParse(payload);
   if (!parsed.success) {
@@ -31,7 +42,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const followUp = listFollowUps().find((f) => f.id === parsed.data.id);
+  const followUp = getFollowUp(user.id, parsed.data.id);
   if (!followUp) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
@@ -39,7 +50,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ followUp });
   }
 
-  const contact = getContact(followUp.contactId);
+  const contact = getContact(user.id, followUp.contactId);
   if (!contact) {
     return NextResponse.json({ error: "contact_not_found" }, { status: 404 });
   }
@@ -50,7 +61,7 @@ export async function POST(request: Request) {
       subject: followUp.subject,
       body: followUp.draft,
     });
-    const updated = updateFollowUp(followUp.id, { status: "sent" });
+    const updated = updateFollowUp(user.id, followUp.id, { status: "sent" });
     return NextResponse.json({ followUp: updated, messageId: result.messageId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "send_failed";

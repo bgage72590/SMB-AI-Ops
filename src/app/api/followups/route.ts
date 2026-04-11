@@ -8,6 +8,7 @@ import {
   updateFollowUp,
 } from "@/lib/store";
 import { draftFollowUp } from "@/lib/ai";
+import { AuthError, requireUserForApi } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -25,10 +26,28 @@ const UpdateSchema = z.object({
 });
 
 export async function GET() {
-  return NextResponse.json({ followUps: listFollowUps() });
+  try {
+    const user = requireUserForApi();
+    return NextResponse.json({ followUps: listFollowUps(user.id) });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
 }
 
 export async function POST(request: Request) {
+  let user;
+  try {
+    user = requireUserForApi();
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = CreateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -38,14 +57,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const contact = getContact(parsed.data.contactId);
+  const contact = getContact(user.id, parsed.data.contactId);
   if (!contact) {
     return NextResponse.json(
       { error: "contact_not_found" },
       { status: 404 }
     );
   }
-  const deal = parsed.data.dealId ? getDeal(parsed.data.dealId) : undefined;
+  const deal = parsed.data.dealId
+    ? getDeal(user.id, parsed.data.dealId)
+    : undefined;
 
   const draft = await draftFollowUp({
     contact,
@@ -53,7 +74,7 @@ export async function POST(request: Request) {
     context: parsed.data.context,
   });
 
-  const followUp = createFollowUp({
+  const followUp = createFollowUp(user.id, {
     contactId: contact.id,
     dealId: deal?.id,
     subject: draft.subject,
@@ -65,6 +86,16 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  let user;
+  try {
+    user = requireUserForApi();
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = UpdateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -74,7 +105,7 @@ export async function PATCH(request: Request) {
     );
   }
   const { id, ...rest } = parsed.data;
-  const followUp = updateFollowUp(id, rest);
+  const followUp = updateFollowUp(user.id, id, rest);
   if (!followUp)
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ followUp });

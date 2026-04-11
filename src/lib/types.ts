@@ -1,8 +1,30 @@
 // Core domain types for the SMB AI Ops platform.
 //
-// We keep these intentionally flat so the JSON store in src/lib/store.ts can
-// serialize them directly. If this ever graduates to a real database, the
-// shapes map cleanly onto SQL tables.
+// We keep these intentionally flat so the store in src/lib/store.ts can
+// map them 1:1 onto SQLite rows. Every user-owned row carries a `userId`
+// foreign key so everything can be scoped to a single workspace.
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  /**
+   * Optional per-user inbound address. When set, incoming Postmark webhooks
+   * whose `To` header matches this value are routed to this user. When not
+   * set, the inbound webhook falls back to the first user in the database.
+   */
+  inboundAddress?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Session {
+  /** Opaque session token (doubles as cookie value). */
+  id: string;
+  userId: string;
+  createdAt: string;
+  expiresAt: string;
+}
 
 export type EmailCategory =
   | "new_lead"
@@ -24,6 +46,7 @@ export type DealStage =
 
 export interface Contact {
   id: string;
+  userId: string;
   name: string;
   email: string;
   company?: string;
@@ -35,6 +58,7 @@ export interface Contact {
 
 export interface Deal {
   id: string;
+  userId: string;
   title: string;
   contactId: string;
   stage: DealStage;
@@ -48,6 +72,7 @@ export interface Deal {
 
 export interface Email {
   id: string;
+  userId: string;
   from: string;
   fromName?: string;
   to: string;
@@ -68,6 +93,7 @@ export interface Email {
 
 export interface FollowUp {
   id: string;
+  userId: string;
   emailId?: string;
   dealId?: string;
   contactId: string;

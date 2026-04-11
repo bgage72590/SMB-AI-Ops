@@ -33,6 +33,9 @@ processing runs cheaply.
 - **Postmark** for real email in (inbound webhook) and out (follow-up send)
 - **SQLite** via `better-sqlite3` for persistence — WAL mode, race-safe
   upserts, one file at `data/store.sqlite`. Migrations run on boot.
+- **Cookie-based auth** — multi-user, scrypt-hashed passwords, opaque
+  session tokens stored in the DB (no JWTs, sessions are revocable). See
+  `src/lib/auth.ts`.
 - **Zod** for input validation
 
 ## Getting started
@@ -50,10 +53,11 @@ npm run dev
 # open http://localhost:3000
 ```
 
-On first load the app creates `data/store.sqlite`, runs migrations, and
-seeds it with a handful of sample contacts, deals, and emails. Hit
-**Process inbox** on the dashboard to watch the AI triage and update the
-CRM in real time.
+On first load the app creates `data/store.sqlite` and runs migrations.
+Hit `/signup`, create a workspace, and a handful of sample contacts,
+deals, and emails are loaded in so you have something to click on. Then
+press **Process inbox** on the dashboard to watch the AI triage and
+update the CRM in real time.
 
 Without an API key the app still runs — it falls back to a simple heuristic
 triage so you can click around the UI. Set the key to get real summaries and
@@ -69,7 +73,10 @@ src/
 │   ├── deals/page.tsx       # pipeline board
 │   ├── contacts/page.tsx    # CRM table
 │   ├── followups/page.tsx   # drafted replies
+│   ├── login/page.tsx       # sign in
+│   ├── signup/page.tsx      # create workspace (seeds sample data)
 │   └── api/
+│       ├── auth/            # signup / login / logout
 │       ├── inbox/           # POST an email, optionally auto-process
 │       ├── process/         # run the AI pipeline on one or all emails
 │       ├── contacts/
@@ -83,13 +90,39 @@ src/
 ├── components/              # presentational React components
 └── lib/
     ├── ai.ts                # Anthropic SDK wrapper (triage + drafting)
+    ├── auth.ts              # scrypt hashing, sessions, getCurrentUser
     ├── pipeline.ts          # email → CRM side-effects
     ├── postmark.ts          # Postmark send + inbound auth helpers
     ├── store.ts             # SQLite-backed persistence (better-sqlite3)
-    ├── seed.ts              # sample data
+    ├── seed.ts              # sample data (per-user workspace)
     ├── types.ts             # domain types
     └── format.ts            # display helpers
 ```
+
+## Accounts
+
+Every row in the database is scoped to a user, and every page and API
+route requires a signed-in session. The first time you hit the app, go
+to `/signup` — the account you create gets a fresh workspace populated
+with sample contacts, deals, and emails so it's immediately interactive.
+
+- Passwords are hashed with `scrypt` (Node stdlib, no native deps).
+- Sessions are opaque random tokens stored in the `sessions` table and
+  mirrored into an `HttpOnly` cookie. No JWTs — logging out revokes the
+  session row server-side so a stolen cookie can be killed immediately.
+- If you're upgrading an install from before multi-user landed, existing
+  rows are attached to a `owner@localhost` account on first boot and a
+  one-time password is printed to the server log. Log in with it and
+  change it via `/signup` flow (or wipe `data/store.sqlite` for a fully
+  clean start).
+
+### Routing inbound email to a user
+
+The Postmark inbound webhook matches the incoming `To` address against
+every user's `inboundAddress` column and routes the email to the winner.
+If no one claims the address, it falls back to the first user in the DB
+so single-tenant installs still "just work". Multi-tenant installs set
+`inboundAddress` per user (e.g. `marta+inbox@yourdomain.com`).
 
 ## Wiring up a real inbox
 

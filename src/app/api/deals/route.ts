@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createDeal, listDeals, updateDeal } from "@/lib/store";
+import { AuthError, requireUserForApi } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -26,10 +27,28 @@ const UpdateSchema = z.object({
 });
 
 export async function GET() {
-  return NextResponse.json({ deals: listDeals() });
+  try {
+    const user = requireUserForApi();
+    return NextResponse.json({ deals: listDeals(user.id) });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
 }
 
 export async function POST(request: Request) {
+  let user;
+  try {
+    user = requireUserForApi();
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = CreateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -38,11 +57,21 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const deal = createDeal(parsed.data);
+  const deal = createDeal(user.id, parsed.data);
   return NextResponse.json({ deal }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {
+  let user;
+  try {
+    user = requireUserForApi();
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = UpdateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -52,7 +81,7 @@ export async function PATCH(request: Request) {
     );
   }
   const { id, ...rest } = parsed.data;
-  const deal = updateDeal(id, rest);
+  const deal = updateDeal(user.id, id, rest);
   if (!deal) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ deal });
 }

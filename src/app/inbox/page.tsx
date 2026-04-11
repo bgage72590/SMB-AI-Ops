@@ -5,11 +5,13 @@ import {
 } from "@/components/Badge";
 import { listEmails } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default function InboxPage() {
-  const emails = listEmails();
+  const user = requireUser();
+  const emails = listEmails(user.id);
   const unprocessed = emails.filter((e) => !e.processed);
   const processed = emails.filter((e) => e.processed);
 

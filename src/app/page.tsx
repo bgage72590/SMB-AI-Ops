@@ -15,14 +15,16 @@ import {
 } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { isAIConfigured } from "@/lib/ai";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default function DashboardPage() {
-  const emails = listEmails();
-  const deals = listDeals();
-  const contacts = listContacts();
-  const followUps = listFollowUps();
+  const user = requireUser();
+  const emails = listEmails(user.id);
+  const deals = listDeals(user.id);
+  const contacts = listContacts(user.id);
+  const followUps = listFollowUps(user.id);
 
   const unprocessed = emails.filter((e) => !e.processed).length;
   const openDeals = deals.filter((d) => d.stage !== "won" && d.stage !== "lost");
@@ -35,11 +37,15 @@ export default function DashboardPage() {
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5);
 
+  const firstName = user.name.split(" ")[0] || user.name;
+
   return (
     <div className="space-y-8">
       <section className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-ink-900">Good morning</h1>
+          <h1 className="text-2xl font-semibold text-ink-900">
+            Good morning, {firstName}
+          </h1>
           <p className="text-ink-500 mt-1">
             Here&apos;s what&apos;s going on across your business today.
           </p>
@@ -143,7 +149,7 @@ export default function DashboardPage() {
               <li className="py-4 text-sm text-ink-400">No open deals.</li>
             )}
             {hotDeals.map((deal) => {
-              const contact = getContact(deal.contactId);
+              const contact = getContact(user.id, deal.contactId);
               return (
                 <li key={deal.id} className="py-3">
                   <div className="flex items-start justify-between gap-3">
