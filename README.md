@@ -30,9 +30,10 @@ processing runs cheaply.
 - **Next.js 14** (App Router, Server Components) + **TypeScript**
 - **Tailwind CSS** for styling
 - **@anthropic-ai/sdk** for the AI layer
+- **Postmark** for real email in (inbound webhook) and out (follow-up send)
+- **SQLite** via `better-sqlite3` for persistence — WAL mode, race-safe
+  upserts, one file at `data/store.sqlite`. Migrations run on boot.
 - **Zod** for input validation
-- A **JSON-file store** at `data/store.json` for persistence (swap for SQLite
-  or Postgres when you outgrow it — the `src/lib/store.ts` API stays the same)
 
 ## Getting started
 
@@ -49,9 +50,10 @@ npm run dev
 # open http://localhost:3000
 ```
 
-On first load the app seeds `data/store.json` with a handful of sample
-contacts, deals, and emails. Hit **Process inbox** on the dashboard to watch
-the AI triage and update the CRM in real time.
+On first load the app creates `data/store.sqlite`, runs migrations, and
+seeds it with a handful of sample contacts, deals, and emails. Hit
+**Process inbox** on the dashboard to watch the AI triage and update the
+CRM in real time.
 
 Without an API key the app still runs — it falls back to a simple heuristic
 triage so you can click around the UI. Set the key to get real summaries and
@@ -83,7 +85,7 @@ src/
     ├── ai.ts                # Anthropic SDK wrapper (triage + drafting)
     ├── pipeline.ts          # email → CRM side-effects
     ├── postmark.ts          # Postmark send + inbound auth helpers
-    ├── store.ts             # JSON-file-backed persistence
+    ├── store.ts             # SQLite-backed persistence (better-sqlite3)
     ├── seed.ts              # sample data
     ├── types.ts             # domain types
     └── format.ts            # display helpers
@@ -141,7 +143,7 @@ The MVP is deliberately narrow. Obvious next steps:
 
 - Calendar tool for the scheduling category (Cal.com or Google Calendar).
 - Multi-user support + auth.
-- Swap the JSON store for SQLite (better-sqlite3) or Postgres.
+- Graduate persistence from SQLite to Postgres when multi-user lands.
 - HMAC-based Postmark signature verification (currently shared-secret only).
 
 ## License
