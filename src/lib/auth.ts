@@ -1,4 +1,5 @@
 import {
+  createHash,
   randomBytes,
   scryptSync,
   timingSafeEqual,
@@ -7,14 +8,20 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { User } from "./types";
 import {
+  createPasswordResetToken,
   createSessionRow,
   createUserRow,
+  deleteExpiredPasswordResetTokens,
   deleteSession,
+  deleteSessionsForUser,
+  findPasswordResetToken,
   getPasswordHashByEmail,
   getSession,
   getUserByEmail,
   getUserById,
+  markPasswordResetTokenUsed,
   seedWorkspace,
+  updateUserPasswordHash,
 } from "./store";
 
 // Small auth layer over the SQLite store. We keep everything in-house
@@ -31,6 +38,8 @@ export const SESSION_COOKIE = "smb_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SCRYPT_KEYLEN = 64;
 const SALT_BYTES = 16;
+const RESET_TOKEN_BYTES = 32;
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // ---------- Password hashing ----------
 
@@ -171,6 +180,82 @@ export function requireUserForApi(): User {
   return user;
 }
 
+// ---------- Password reset ----------
+
+export interface PasswordResetRequestOutput {
+  // The caller-facing API always reports success to avoid leaking which
+  // emails exist. In dev (no Postmark) we hand back `resetUrl` so the
+  // developer can still complete the flow without an inbox.
+  resetUrl?: string;
+}
+
+function hashResetToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Mint a one-shot password-reset token for a user. The plaintext token is
+ * only ever returned from this function — we persist a SHA-256 hash. Even
+ * with read access to the DB, an attacker can't replay the email link.
+ *
+ * Always returns success-shaped output, even when the email isn't known,
+ * so that an attacker can't use this endpoint as an account enumeration
+ * oracle.
+ */
+export function requestPasswordReset(input: {
+  email: string;
+}): PasswordResetRequestOutput {
+  // Opportunistic cleanup so the table doesn't grow unbounded.
+  try {
+    deleteExpiredPasswordResetTokens();
+  } catch {
+    // best-effort
+  }
+
+  const email = input.email.trim().toLowerCase();
+  if (!email) return {};
+
+  const user = getUserByEmail(email);
+  if (!user) return {};
+
+  const plaintext = randomBytes(RESET_TOKEN_BYTES).toString("base64url");
+  const tokenHash = hashResetToken(plaintext);
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
+  createPasswordResetToken({ userId: user.id, tokenHash, expiresAt });
+
+  // The caller (the API route) is responsible for actually sending the
+  // email. We return the URL so the route can decide whether to email
+  // it (prod) or log it (dev).
+  const base = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  const url = `${base.replace(/\/$/, "")}/reset?token=${encodeURIComponent(plaintext)}`;
+  return { resetUrl: url };
+}
+
+/**
+ * Consume a password-reset token: verify it, update the user's hash, mark
+ * the token used, and revoke every existing session so an attacker with a
+ * stale cookie is kicked out.
+ */
+export function completePasswordReset(input: {
+  token: string;
+  newPassword: string;
+}): void {
+  const token = input.token.trim();
+  if (!token) throw new AuthError("invalid_token");
+  if (input.newPassword.length < 8) throw new AuthError("weak_password");
+
+  const row = findPasswordResetToken(hashResetToken(token));
+  if (!row) throw new AuthError("invalid_token");
+  if (row.usedAt) throw new AuthError("token_used");
+  if (new Date(row.expiresAt).getTime() <= Date.now()) {
+    throw new AuthError("token_expired");
+  }
+
+  updateUserPasswordHash(row.userId, hashPassword(input.newPassword));
+  markPasswordResetTokenUsed(row.id);
+  deleteSessionsForUser(row.userId);
+}
+
 // ---------- Errors ----------
 
 export class AuthError extends Error {
@@ -179,7 +264,10 @@ export class AuthError extends Error {
     | "weak_password"
     | "email_taken"
     | "invalid_credentials"
-    | "unauthorized";
+    | "unauthorized"
+    | "invalid_token"
+    | "token_expired"
+    | "token_used";
   status: number;
   constructor(code: AuthError["code"]) {
     super(code);

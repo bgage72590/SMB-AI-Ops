@@ -87,6 +87,17 @@ function migrate(conn: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(userId);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expiresAt);
 
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tokenHash   TEXT NOT NULL,
+      createdAt   TEXT NOT NULL,
+      expiresAt   TEXT NOT NULL,
+      usedAt      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(userId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_tokens(tokenHash);
+
     CREATE TABLE IF NOT EXISTS contacts (
       id         TEXT PRIMARY KEY,
       userId     TEXT,
@@ -595,6 +606,102 @@ export function deleteExpiredSessions(): void {
   db()
     .prepare("DELETE FROM sessions WHERE expiresAt < ?")
     .run(new Date().toISOString());
+}
+
+export function deleteSessionsForUser(userId: string): void {
+  db().prepare("DELETE FROM sessions WHERE userId = ?").run(userId);
+}
+
+// ---------- Password reset tokens ----------
+
+export interface PasswordResetToken {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt?: string;
+}
+
+interface PasswordResetTokenRow {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+}
+
+function rowToPasswordResetToken(
+  row: PasswordResetTokenRow
+): PasswordResetToken {
+  return {
+    id: row.id,
+    userId: row.userId,
+    tokenHash: row.tokenHash,
+    createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
+    usedAt: row.usedAt ?? undefined,
+  };
+}
+
+export function createPasswordResetToken(input: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+}): PasswordResetToken {
+  const conn = db();
+  const id = newId();
+  const createdAt = now();
+  conn
+    .prepare(
+      `INSERT INTO password_reset_tokens
+         (id, userId, tokenHash, createdAt, expiresAt, usedAt)
+       VALUES (?, ?, ?, ?, ?, NULL)`
+    )
+    .run(id, input.userId, input.tokenHash, createdAt, input.expiresAt);
+  return {
+    id,
+    userId: input.userId,
+    tokenHash: input.tokenHash,
+    createdAt,
+    expiresAt: input.expiresAt,
+  };
+}
+
+export function findPasswordResetToken(
+  tokenHash: string
+): PasswordResetToken | undefined {
+  const row = db()
+    .prepare(
+      "SELECT * FROM password_reset_tokens WHERE tokenHash = ? LIMIT 1"
+    )
+    .get(tokenHash) as PasswordResetTokenRow | undefined;
+  return row ? rowToPasswordResetToken(row) : undefined;
+}
+
+export function markPasswordResetTokenUsed(id: string): void {
+  db()
+    .prepare("UPDATE password_reset_tokens SET usedAt = ? WHERE id = ?")
+    .run(now(), id);
+}
+
+export function deleteExpiredPasswordResetTokens(): void {
+  db()
+    .prepare("DELETE FROM password_reset_tokens WHERE expiresAt < ?")
+    .run(now());
+}
+
+export function updateUserPasswordHash(
+  userId: string,
+  passwordHash: string
+): void {
+  const conn = db();
+  conn
+    .prepare(
+      `UPDATE users SET passwordHash = ?, updatedAt = ? WHERE id = ?`
+    )
+    .run(passwordHash, now(), userId);
 }
 
 // ---------- Contacts ----------
