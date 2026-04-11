@@ -41,7 +41,16 @@ export function Nav({
             </nav>
           )}
           {user ? (
-            <UserMenu name={user.name} email={user.email} />
+            <div className="flex items-center gap-3">
+              <span
+                className="hidden md:inline-flex items-center gap-1 text-[11px] text-ink-400 border border-ink-100 rounded-md px-2 py-1"
+                title="Press Cmd-K or Ctrl-K to search"
+              >
+                <span>Search</span>
+                <kbd className="font-mono">⌘K</kbd>
+              </span>
+              <UserMenu name={user.name} email={user.email} />
+            </div>
           ) : (
             <div className="flex items-center gap-2 text-sm">
               <Link

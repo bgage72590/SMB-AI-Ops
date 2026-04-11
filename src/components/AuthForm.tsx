@@ -111,6 +111,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 ? "Create account"
                 : "Sign in"}
           </button>
+
+          {!isSignup && (
+            <div className="text-xs text-ink-500 text-center -mt-1">
+              <Link href="/forgot" className="text-accent hover:underline">
+                Forgot your password?
+              </Link>
+            </div>
+          )}
         </form>
 
         <div className="text-xs text-ink-500 text-center mt-4">

@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+type DbConnection = Database.Database;
 import type {
   Contact,
   Deal,
@@ -14,6 +13,7 @@ import type {
   StoreShape,
   User,
 } from "./types";
+import { closeConnection, getConnection } from "./db";
 import { seedStore } from "./seed";
 
 // SQLite-backed store. Every user-owned table carries a `userId` foreign
@@ -26,29 +26,18 @@ import { seedStore } from "./seed";
 // The DB file lives at ./data/store.sqlite. On first boot we create all
 // tables (and, for pre-auth installs, migrate existing rows onto a legacy
 // owner user — see migrateLegacyData).
+//
+// Connection management (open/close/cache) lives in ./db so this file
+// stays focused on schema + queries. See docs/postgres-migration.md.
 
-// Tests (and local tinkering) can override the data directory via
-// SMB_AI_OPS_DATA_DIR so multiple stores can coexist without clobbering
-// ./data/store.sqlite. We read the env var at connection time, not at
-// module load, so tests can set it per-suite via __resetDbForTests().
-function dataDir(): string {
-  return process.env.SMB_AI_OPS_DATA_DIR || path.join(process.cwd(), "data");
-}
-
-let _db: Database.Database | null = null;
-
-function db(): Database.Database {
-  if (_db) return _db;
-  const dir = dataDir();
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  const conn = new Database(path.join(dir, "store.sqlite"));
-  conn.pragma("journal_mode = WAL");
-  conn.pragma("foreign_keys = ON");
-  migrate(conn);
-  _db = conn;
-  return conn;
+function db(): DbConnection {
+  return getConnection({
+    onOpen: (conn) => {
+      conn.pragma("journal_mode = WAL");
+      conn.pragma("foreign_keys = ON");
+      migrate(conn);
+    },
+  });
 }
 
 /**
@@ -57,10 +46,7 @@ function db(): Database.Database {
  * through a public entry point — tests reach in for this.
  */
 export function __resetDbForTests(): void {
-  if (_db) {
-    _db.close();
-    _db = null;
-  }
+  closeConnection();
 }
 
 function migrate(conn: Database.Database): void {
@@ -86,6 +72,35 @@ function migrate(conn: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(userId);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expiresAt);
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tokenHash   TEXT NOT NULL,
+      createdAt   TEXT NOT NULL,
+      expiresAt   TEXT NOT NULL,
+      usedAt      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(userId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_tokens(tokenHash);
+
+    CREATE TABLE IF NOT EXISTS jobs (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT REFERENCES users(id) ON DELETE CASCADE,
+      type        TEXT NOT NULL,
+      payload     TEXT NOT NULL,
+      status      TEXT NOT NULL,
+      attempts    INTEGER NOT NULL DEFAULT 0,
+      maxAttempts INTEGER NOT NULL DEFAULT 3,
+      lastError   TEXT,
+      runAfter    TEXT NOT NULL,
+      createdAt   TEXT NOT NULL,
+      startedAt   TEXT,
+      finishedAt  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_runAfter
+      ON jobs(status, runAfter);
+    CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(userId);
 
     CREATE TABLE IF NOT EXISTS contacts (
       id         TEXT PRIMARY KEY,
@@ -557,6 +572,15 @@ export function getFirstUser(): User | undefined {
   return row ? rowToUser(row) : undefined;
 }
 
+// Used by the scheduled digest job. Callers iterate over every user and
+// run their own per-user work. Never exposed to end-user API routes.
+export function listAllUsers(): User[] {
+  const rows = db()
+    .prepare("SELECT * FROM users ORDER BY createdAt ASC")
+    .all() as UserRow[];
+  return rows.map(rowToUser);
+}
+
 // ---------- Sessions ----------
 
 export function createSessionRow(input: {
@@ -595,6 +619,279 @@ export function deleteExpiredSessions(): void {
   db()
     .prepare("DELETE FROM sessions WHERE expiresAt < ?")
     .run(new Date().toISOString());
+}
+
+export function deleteSessionsForUser(userId: string): void {
+  db().prepare("DELETE FROM sessions WHERE userId = ?").run(userId);
+}
+
+// ---------- Password reset tokens ----------
+
+export interface PasswordResetToken {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt?: string;
+}
+
+interface PasswordResetTokenRow {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+}
+
+function rowToPasswordResetToken(
+  row: PasswordResetTokenRow
+): PasswordResetToken {
+  return {
+    id: row.id,
+    userId: row.userId,
+    tokenHash: row.tokenHash,
+    createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
+    usedAt: row.usedAt ?? undefined,
+  };
+}
+
+export function createPasswordResetToken(input: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+}): PasswordResetToken {
+  const conn = db();
+  const id = newId();
+  const createdAt = now();
+  conn
+    .prepare(
+      `INSERT INTO password_reset_tokens
+         (id, userId, tokenHash, createdAt, expiresAt, usedAt)
+       VALUES (?, ?, ?, ?, ?, NULL)`
+    )
+    .run(id, input.userId, input.tokenHash, createdAt, input.expiresAt);
+  return {
+    id,
+    userId: input.userId,
+    tokenHash: input.tokenHash,
+    createdAt,
+    expiresAt: input.expiresAt,
+  };
+}
+
+export function findPasswordResetToken(
+  tokenHash: string
+): PasswordResetToken | undefined {
+  const row = db()
+    .prepare(
+      "SELECT * FROM password_reset_tokens WHERE tokenHash = ? LIMIT 1"
+    )
+    .get(tokenHash) as PasswordResetTokenRow | undefined;
+  return row ? rowToPasswordResetToken(row) : undefined;
+}
+
+export function markPasswordResetTokenUsed(id: string): void {
+  db()
+    .prepare("UPDATE password_reset_tokens SET usedAt = ? WHERE id = ?")
+    .run(now(), id);
+}
+
+export function deleteExpiredPasswordResetTokens(): void {
+  db()
+    .prepare("DELETE FROM password_reset_tokens WHERE expiresAt < ?")
+    .run(now());
+}
+
+export function updateUserPasswordHash(
+  userId: string,
+  passwordHash: string
+): void {
+  const conn = db();
+  conn
+    .prepare(
+      `UPDATE users SET passwordHash = ?, updatedAt = ? WHERE id = ?`
+    )
+    .run(passwordHash, now(), userId);
+}
+
+// ---------- Jobs ----------
+
+export type JobStatus = "pending" | "running" | "done" | "failed";
+
+export interface Job {
+  id: string;
+  userId?: string;
+  type: string;
+  payload: unknown;
+  status: JobStatus;
+  attempts: number;
+  maxAttempts: number;
+  lastError?: string;
+  runAfter: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+interface JobRow {
+  id: string;
+  userId: string | null;
+  type: string;
+  payload: string;
+  status: JobStatus;
+  attempts: number;
+  maxAttempts: number;
+  lastError: string | null;
+  runAfter: string;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+function rowToJob(row: JobRow): Job {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.payload);
+  } catch {
+    parsed = null;
+  }
+  return {
+    id: row.id,
+    userId: row.userId ?? undefined,
+    type: row.type,
+    payload: parsed,
+    status: row.status,
+    attempts: row.attempts,
+    maxAttempts: row.maxAttempts,
+    lastError: row.lastError ?? undefined,
+    runAfter: row.runAfter,
+    createdAt: row.createdAt,
+    startedAt: row.startedAt ?? undefined,
+    finishedAt: row.finishedAt ?? undefined,
+  };
+}
+
+export function enqueueJob(input: {
+  type: string;
+  payload: unknown;
+  userId?: string;
+  runAfter?: string;
+  maxAttempts?: number;
+}): Job {
+  const conn = db();
+  const id = newId();
+  const createdAt = now();
+  const runAfter = input.runAfter ?? createdAt;
+  const maxAttempts = input.maxAttempts ?? 3;
+  const payloadText = JSON.stringify(input.payload ?? null);
+  conn
+    .prepare(
+      `INSERT INTO jobs
+         (id, userId, type, payload, status, attempts, maxAttempts, lastError, runAfter, createdAt)
+       VALUES (?, ?, ?, ?, 'pending', 0, ?, NULL, ?, ?)`
+    )
+    .run(id, input.userId ?? null, input.type, payloadText, maxAttempts, runAfter, createdAt);
+  return {
+    id,
+    userId: input.userId,
+    type: input.type,
+    payload: input.payload,
+    status: "pending",
+    attempts: 0,
+    maxAttempts,
+    runAfter,
+    createdAt,
+  };
+}
+
+/**
+ * Atomically claim the next runnable job — a single SQL UPDATE flips one
+ * row from pending->running and returns it. better-sqlite3 is synchronous
+ * and single-threaded within a process, so the UPDATE is serial-safe for
+ * a single-worker deployment. Multiple workers would need a real
+ * queueing backend.
+ */
+export function claimNextJob(): Job | undefined {
+  const conn = db();
+  const nowStr = now();
+  const row = conn
+    .prepare(
+      `SELECT * FROM jobs
+        WHERE status = 'pending' AND runAfter <= ?
+        ORDER BY runAfter ASC
+        LIMIT 1`
+    )
+    .get(nowStr) as JobRow | undefined;
+  if (!row) return undefined;
+
+  const update = conn
+    .prepare(
+      `UPDATE jobs
+          SET status = 'running', startedAt = ?, attempts = attempts + 1
+        WHERE id = ? AND status = 'pending'`
+    )
+    .run(nowStr, row.id);
+
+  if (update.changes !== 1) return undefined; // raced — try again next tick
+
+  row.status = "running";
+  row.startedAt = nowStr;
+  row.attempts = row.attempts + 1;
+  return rowToJob(row);
+}
+
+export function completeJob(id: string): void {
+  db()
+    .prepare(
+      `UPDATE jobs SET status = 'done', finishedAt = ?, lastError = NULL WHERE id = ?`
+    )
+    .run(now(), id);
+}
+
+export function failJob(id: string, message: string): void {
+  const conn = db();
+  const row = conn
+    .prepare("SELECT attempts, maxAttempts FROM jobs WHERE id = ?")
+    .get(id) as { attempts: number; maxAttempts: number } | undefined;
+  if (!row) return;
+
+  if (row.attempts >= row.maxAttempts) {
+    conn
+      .prepare(
+        `UPDATE jobs SET status = 'failed', finishedAt = ?, lastError = ? WHERE id = ?`
+      )
+      .run(now(), message, id);
+  } else {
+    // Exponential backoff: 30s, 2m, 8m, 32m, capped at 1h.
+    const delayMs = Math.min(30_000 * Math.pow(4, row.attempts - 1), 3_600_000);
+    const runAfter = new Date(Date.now() + delayMs).toISOString();
+    conn
+      .prepare(
+        `UPDATE jobs SET status = 'pending', runAfter = ?, lastError = ? WHERE id = ?`
+      )
+      .run(runAfter, message, id);
+  }
+}
+
+export function countPendingJobs(): number {
+  const row = db()
+    .prepare(
+      "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('pending', 'running')"
+    )
+    .get() as { c: number };
+  return row.c;
+}
+
+export function listRecentJobs(limit = 50): Job[] {
+  const rows = db()
+    .prepare(
+      "SELECT * FROM jobs ORDER BY createdAt DESC LIMIT ?"
+    )
+    .all(limit) as JobRow[];
+  return rows.map(rowToJob);
 }
 
 // ---------- Contacts ----------
