@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createEmail } from "@/lib/store";
 import { processEmail } from "@/lib/pipeline";
 import {
-  verifyInboundSecret,
+  verifyInboundAuth,
   type PostmarkInboundPayload,
 } from "@/lib/postmark";
 
@@ -10,20 +10,27 @@ export const runtime = "nodejs";
 
 // Postmark inbound webhook.
 //
-// Configure the webhook URL in Postmark's inbound stream settings. Either:
-//   1) Put the secret in the URL as Basic Auth: https://user:secret@host/api/webhooks/postmark/inbound
-//   2) Or append ?token=<secret> to the URL.
+// Auth modes (see src/lib/postmark.ts for the full rules):
+//   - Preferred: HMAC. Set POSTMARK_WEBHOOK_HMAC_SECRET and have your
+//     signing proxy send `X-Signature: sha256=<hex>` computed over the
+//     raw request body.
+//   - Fallback: shared secret via POSTMARK_INBOUND_SECRET. Pass it as a
+//     Bearer header, as Basic Auth (Postmark's URL format), or as
+//     `?token=<secret>`.
 //
-// The shared secret lives in POSTMARK_INBOUND_SECRET. Requests without a
-// matching secret get a flat 401.
+// If neither env var is set, every request is rejected.
 export async function POST(request: Request) {
-  if (!verifyInboundSecret(request)) {
+  // HMAC has to verify over the exact bytes we received, so read once as
+  // text and parse JSON ourselves below.
+  const rawBody = await request.text();
+
+  if (!verifyInboundAuth(request, rawBody)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   let payload: PostmarkInboundPayload;
   try {
-    payload = (await request.json()) as PostmarkInboundPayload;
+    payload = JSON.parse(rawBody) as PostmarkInboundPayload;
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }

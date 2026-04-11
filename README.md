@@ -118,6 +118,16 @@ actually dispatches the drafted reply via the Postmark API and marks it sent.
 If it's not configured, the same button degrades to **Mark sent** — a purely
 local state change.
 
+**Stronger auth (recommended for production).** Set
+`POSTMARK_WEBHOOK_HMAC_SECRET` instead of (or in addition to) the shared
+secret. When that env var is set, the inbound route requires an
+`X-Signature: sha256=<hex>` header computed as HMAC-SHA256 of the raw body
+under your secret, and the shared-secret checks are skipped. The secret
+never travels over the wire, and a captured request can't be replayed
+against a different body. Postmark doesn't sign inbound webhooks natively,
+so this is meant to pair with a signing proxy (or any other provider whose
+webhooks are HMAC-signed).
+
 ### Option 2 — raw POST
 
 `POST /api/inbox` accepts a JSON body matching the `IngestSchema` in

@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 // Thin Postmark client. We hit the REST API directly with fetch so we don't
 // pull in another dependency just for one endpoint.
 //
@@ -90,16 +92,56 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   };
 }
 
-// Verify an inbound Postmark request against our shared secret. We accept
-// either an Authorization: Bearer <secret> header OR a ?token=<secret> query
-// param so you can point any inbound webhook at us, not just Postmark's UI
-// (which supports Basic Auth on the URL).
-export function verifyInboundSecret(request: Request): boolean {
+// ---------- Inbound webhook auth ----------
+//
+// We support two auth modes on the inbound webhook:
+//
+//   1) HMAC signature (preferred). When POSTMARK_WEBHOOK_HMAC_SECRET is set,
+//      the webhook MUST include an `X-Signature: sha256=<hex>` header whose
+//      value matches HMAC-SHA256(secret, rawBody). Postmark itself doesn't
+//      sign inbound webhooks natively, but this is the standard shape any
+//      signing proxy (or other provider you might point at this endpoint)
+//      will produce. This is strictly stronger than shared secret: the
+//      secret never travels over the wire, and replaying a captured
+//      request against a different body won't validate.
+//
+//   2) Shared secret fallback. When POSTMARK_WEBHOOK_HMAC_SECRET is NOT set
+//      but POSTMARK_INBOUND_SECRET is, we accept either:
+//        - Authorization: Bearer <secret>
+//        - Authorization: Basic <base64(anything:secret)>   (Postmark UI)
+//        - ?token=<secret>                                  (query param)
+//
+// If neither env var is set, every request is rejected. Fail closed.
+
+export function isHmacConfigured(): boolean {
+  return Boolean(process.env.POSTMARK_WEBHOOK_HMAC_SECRET);
+}
+
+export function verifyHmacSignature(
+  request: Request,
+  rawBody: string
+): boolean {
+  const secret = process.env.POSTMARK_WEBHOOK_HMAC_SECRET;
+  if (!secret) return false;
+
+  const header =
+    request.headers.get("x-signature") ||
+    request.headers.get("x-postmark-signature") ||
+    request.headers.get("x-hub-signature-256");
+  if (!header) return false;
+
+  const provided = header.startsWith("sha256=") ? header.slice(7) : header;
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody, "utf-8")
+    .digest("hex");
+
+  return constantTimeEqualHex(computed, provided);
+}
+
+export function verifySharedSecret(request: Request): boolean {
   const expected = process.env.POSTMARK_INBOUND_SECRET;
-  if (!expected) {
-    // No secret configured = reject everything. Fail closed.
-    return false;
-  }
+  if (!expected) return false;
 
   const auth = request.headers.get("authorization");
   if (auth && auth.startsWith("Bearer ")) {
@@ -126,6 +168,23 @@ export function verifyInboundSecret(request: Request): boolean {
   return false;
 }
 
+// Single entry point callers use. Chooses HMAC when configured, otherwise
+// shared secret. Takes the raw body text because HMAC must verify over the
+// exact bytes that were sent.
+export function verifyInboundAuth(
+  request: Request,
+  rawBody: string
+): boolean {
+  if (isHmacConfigured()) return verifyHmacSignature(request, rawBody);
+  return verifySharedSecret(request);
+}
+
+// Back-compat shim for any code still calling the old name. New callers
+// should prefer verifyInboundAuth so HMAC is honored.
+export function verifyInboundSecret(request: Request): boolean {
+  return verifySharedSecret(request);
+}
+
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let out = 0;
@@ -133,4 +192,13 @@ function timingSafeEqual(a: string, b: string): boolean {
     out |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return out === 0;
+}
+
+function constantTimeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+  } catch {
+    return false;
+  }
 }
