@@ -1,6 +1,7 @@
 import { FollowUpActions } from "@/components/FollowUpActions";
 import { getContact, getDeal, listFollowUps } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
+import { isPostmarkConfigured } from "@/lib/postmark";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,7 @@ export default function FollowUpsPage() {
   const followUps = listFollowUps();
   const drafts = followUps.filter((f) => f.status === "draft");
   const rest = followUps.filter((f) => f.status !== "draft");
+  const canSend = isPostmarkConfigured();
 
   return (
     <div className="space-y-8">
@@ -60,7 +62,11 @@ export default function FollowUpsPage() {
                       <span className="text-xs text-ink-400">
                         {formatRelative(f.createdAt)}
                       </span>
-                      <FollowUpActions id={f.id} currentStatus={f.status} />
+                      <FollowUpActions
+                        id={f.id}
+                        currentStatus={f.status}
+                        canSend={canSend}
+                      />
                     </div>
                   </div>
                 </li>
@@ -91,7 +97,11 @@ export default function FollowUpsPage() {
                       {contact?.name || "—"} · {formatRelative(f.createdAt)}
                     </div>
                   </div>
-                  <FollowUpActions id={f.id} currentStatus={f.status} />
+                  <FollowUpActions
+                    id={f.id}
+                    currentStatus={f.status}
+                    canSend={canSend}
+                  />
                 </li>
               );
             })}

@@ -73,11 +73,16 @@ src/
 │       ├── contacts/
 │       ├── deals/
 │       ├── followups/
+│       │   └── send/        # POST: actually dispatch a draft via Postmark
+│       ├── webhooks/
+│       │   └── postmark/
+│       │       └── inbound/ # Postmark inbound webhook target
 │       └── reset/           # dev helper: restore the seed store
 ├── components/              # presentational React components
 └── lib/
     ├── ai.ts                # Anthropic SDK wrapper (triage + drafting)
     ├── pipeline.ts          # email → CRM side-effects
+    ├── postmark.ts          # Postmark send + inbound auth helpers
     ├── store.ts             # JSON-file-backed persistence
     ├── seed.ts              # sample data
     ├── types.ts             # domain types
@@ -86,10 +91,37 @@ src/
 
 ## Wiring up a real inbox
 
+You have two options:
+
+### Option 1 — Postmark inbound (recommended)
+
+1. In Postmark, create a server and enable an **inbound stream**.
+2. Copy your server token + a verified sender into `.env`:
+   ```
+   POSTMARK_SERVER_TOKEN=your-server-token
+   POSTMARK_FROM_EMAIL=you@yourdomain.com
+   POSTMARK_INBOUND_SECRET=some-long-random-string
+   ```
+3. Set the inbound webhook URL in Postmark to:
+   ```
+   https://your-host.example.com/api/webhooks/postmark/inbound?token=YOUR_SECRET
+   ```
+   (Or use Basic Auth: `https://any:YOUR_SECRET@your-host.example.com/api/webhooks/postmark/inbound`)
+4. Forward/reply to your Postmark inbound address. Emails hit the webhook,
+   the pipeline runs synchronously, and the resulting contacts, deals, and
+   follow-up drafts show up in the UI.
+
+Once Postmark is configured, the **Send** button on the Follow-ups page
+actually dispatches the drafted reply via the Postmark API and marks it sent.
+If it's not configured, the same button degrades to **Mark sent** — a purely
+local state change.
+
+### Option 2 — raw POST
+
 `POST /api/inbox` accepts a JSON body matching the `IngestSchema` in
-`src/app/api/inbox/route.ts`. Point whatever email-forwarding service you like
-(Postmark inbound, SendGrid parse, Cloudflare Email Routing + a tiny worker,
-etc.) at that endpoint and the pipeline will take over from there.
+`src/app/api/inbox/route.ts`. Useful for local testing or for pointing any
+other provider (SendGrid parse, Cloudflare Email Routing, a tiny forwarding
+worker) at the app.
 
 ```bash
 curl -X POST http://localhost:3000/api/inbox \
@@ -107,11 +139,10 @@ curl -X POST http://localhost:3000/api/inbox \
 
 The MVP is deliberately narrow. Obvious next steps:
 
-- Real email provider integration (Postmark inbound is the cleanest MVP).
 - Calendar tool for the scheduling category (Cal.com or Google Calendar).
-- Actual sending of approved follow-ups (same provider).
 - Multi-user support + auth.
 - Swap the JSON store for SQLite (better-sqlite3) or Postgres.
+- HMAC-based Postmark signature verification (currently shared-secret only).
 
 ## License
 
