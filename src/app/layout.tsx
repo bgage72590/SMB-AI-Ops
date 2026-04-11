@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { CommandPalette } from "@/components/CommandPalette";
 import { Nav } from "@/components/Nav";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -25,6 +26,7 @@ export default function RootLayout({
             user={user ? { name: user.name, email: user.email } : null}
           />
           <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
+          <CommandPalette enabled={Boolean(user)} />
         </div>
       </body>
     </html>
