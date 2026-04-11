@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createEmail, listEmails } from "@/lib/store";
 import { processEmail } from "@/lib/pipeline";
+import { AuthError, requireUserForApi } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -16,10 +17,28 @@ const IngestSchema = z.object({
 });
 
 export async function GET() {
-  return NextResponse.json({ emails: listEmails() });
+  try {
+    const user = requireUserForApi();
+    return NextResponse.json({ emails: listEmails(user.id) });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
 }
 
 export async function POST(request: Request) {
+  let user;
+  try {
+    user = requireUserForApi();
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
   let payload: unknown;
   try {
     payload = await request.json();
@@ -35,9 +54,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const email = createEmail(parsed.data);
+  const email = createEmail(user.id, parsed.data);
   if (parsed.data.autoProcess) {
-    const result = await processEmail(email);
+    const result = await processEmail(user.id, email);
     return NextResponse.json({ email, result }, { status: 201 });
   }
   return NextResponse.json({ email }, { status: 201 });

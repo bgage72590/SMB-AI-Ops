@@ -1,11 +1,13 @@
 import { listContacts, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default function ContactsPage() {
-  const contacts = listContacts();
-  const deals = listDeals();
+  const user = requireUser();
+  const contacts = listContacts(user.id);
+  const deals = listDeals(user.id);
 
   return (
     <div className="space-y-6">

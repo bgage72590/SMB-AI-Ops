@@ -33,6 +33,9 @@ processing runs cheaply.
 - **Postmark** for real email in (inbound webhook) and out (follow-up send)
 - **SQLite** via `better-sqlite3` for persistence — WAL mode, race-safe
   upserts, one file at `data/store.sqlite`. Migrations run on boot.
+- **Cookie-based auth** — multi-user, scrypt-hashed passwords, opaque
+  session tokens stored in the DB (no JWTs, sessions are revocable). See
+  `src/lib/auth.ts`.
 - **Zod** for input validation
 
 ## Getting started
@@ -50,10 +53,11 @@ npm run dev
 # open http://localhost:3000
 ```
 
-On first load the app creates `data/store.sqlite`, runs migrations, and
-seeds it with a handful of sample contacts, deals, and emails. Hit
-**Process inbox** on the dashboard to watch the AI triage and update the
-CRM in real time.
+On first load the app creates `data/store.sqlite` and runs migrations.
+Hit `/signup`, create a workspace, and a handful of sample contacts,
+deals, and emails are loaded in so you have something to click on. Then
+press **Process inbox** on the dashboard to watch the AI triage and
+update the CRM in real time.
 
 Without an API key the app still runs — it falls back to a simple heuristic
 triage so you can click around the UI. Set the key to get real summaries and
@@ -69,7 +73,10 @@ src/
 │   ├── deals/page.tsx       # pipeline board
 │   ├── contacts/page.tsx    # CRM table
 │   ├── followups/page.tsx   # drafted replies
+│   ├── login/page.tsx       # sign in
+│   ├── signup/page.tsx      # create workspace (seeds sample data)
 │   └── api/
+│       ├── auth/            # signup / login / logout
 │       ├── inbox/           # POST an email, optionally auto-process
 │       ├── process/         # run the AI pipeline on one or all emails
 │       ├── contacts/
@@ -83,13 +90,39 @@ src/
 ├── components/              # presentational React components
 └── lib/
     ├── ai.ts                # Anthropic SDK wrapper (triage + drafting)
+    ├── auth.ts              # scrypt hashing, sessions, getCurrentUser
     ├── pipeline.ts          # email → CRM side-effects
     ├── postmark.ts          # Postmark send + inbound auth helpers
     ├── store.ts             # SQLite-backed persistence (better-sqlite3)
-    ├── seed.ts              # sample data
+    ├── seed.ts              # sample data (per-user workspace)
     ├── types.ts             # domain types
     └── format.ts            # display helpers
 ```
+
+## Accounts
+
+Every row in the database is scoped to a user, and every page and API
+route requires a signed-in session. The first time you hit the app, go
+to `/signup` — the account you create gets a fresh workspace populated
+with sample contacts, deals, and emails so it's immediately interactive.
+
+- Passwords are hashed with `scrypt` (Node stdlib, no native deps).
+- Sessions are opaque random tokens stored in the `sessions` table and
+  mirrored into an `HttpOnly` cookie. No JWTs — logging out revokes the
+  session row server-side so a stolen cookie can be killed immediately.
+- If you're upgrading an install from before multi-user landed, existing
+  rows are attached to a `owner@localhost` account on first boot and a
+  one-time password is printed to the server log. Log in with it and
+  change it via `/signup` flow (or wipe `data/store.sqlite` for a fully
+  clean start).
+
+### Routing inbound email to a user
+
+The Postmark inbound webhook matches the incoming `To` address against
+every user's `inboundAddress` column and routes the email to the winner.
+If no one claims the address, it falls back to the first user in the DB
+so single-tenant installs still "just work". Multi-tenant installs set
+`inboundAddress` per user (e.g. `marta+inbox@yourdomain.com`).
 
 ## Wiring up a real inbox
 
@@ -118,6 +151,31 @@ actually dispatches the drafted reply via the Postmark API and marks it sent.
 If it's not configured, the same button degrades to **Mark sent** — a purely
 local state change.
 
+**Stronger auth (recommended for production).** Set
+`POSTMARK_WEBHOOK_HMAC_SECRET` instead of (or in addition to) the shared
+secret. When that env var is set, the inbound route requires an
+`X-Signature: sha256=<hex>` header computed as HMAC-SHA256 of the raw body
+under your secret, and the shared-secret checks are skipped. The secret
+never travels over the wire, and a captured request can't be replayed
+against a different body. Postmark doesn't sign inbound webhooks natively,
+so this is meant to pair with a signing proxy (or any other provider whose
+webhooks are HMAC-signed).
+
+### Scheduling link (Cal.com / Calendly / etc.)
+
+Set `SCHEDULING_LINK` in `.env` to your self-serve booking URL:
+
+```
+SCHEDULING_LINK=https://cal.com/your-handle/intro
+```
+
+When the AI drafts a follow-up for an email that's about booking a call,
+demo, or intro, it will include that link verbatim in the reply instead of
+asking the owner to propose times. The link is passed to the drafter on
+every run — the model decides whether it's appropriate based on the triage
+category. Leave it unset and the drafter falls back to "happy to send a
+few times that work".
+
 ### Option 2 — raw POST
 
 `POST /api/inbox` accepts a JSON body matching the `IngestSchema` in
@@ -141,10 +199,10 @@ curl -X POST http://localhost:3000/api/inbox \
 
 The MVP is deliberately narrow. Obvious next steps:
 
-- Calendar tool for the scheduling category (Cal.com or Google Calendar).
+- Two-way calendar integration (actually propose times from a live calendar,
+  not just hand out a booking link).
 - Multi-user support + auth.
 - Graduate persistence from SQLite to Postgres when multi-user lands.
-- HMAC-based Postmark signature verification (currently shared-secret only).
 
 ## License
 

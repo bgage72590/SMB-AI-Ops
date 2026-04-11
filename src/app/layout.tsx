@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
+import { getCurrentUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "SMB AI Ops — AI Office Manager",
@@ -8,16 +9,21 @@ export const metadata: Metadata = {
     "AI office manager for small businesses. Reads inbox, updates CRM, drafts follow-ups, tracks deals.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const user = getCurrentUser();
   return (
     <html lang="en">
       <body>
         <div className="min-h-screen">
-          <Nav />
+          <Nav
+            user={user ? { name: user.name, email: user.email } : null}
+          />
           <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
         </div>
       </body>

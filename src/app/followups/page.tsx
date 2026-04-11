@@ -2,11 +2,13 @@ import { FollowUpActions } from "@/components/FollowUpActions";
 import { getContact, getDeal, listFollowUps } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
 import { isPostmarkConfigured } from "@/lib/postmark";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default function FollowUpsPage() {
-  const followUps = listFollowUps();
+  const user = requireUser();
+  const followUps = listFollowUps(user.id);
   const drafts = followUps.filter((f) => f.status === "draft");
   const rest = followUps.filter((f) => f.status !== "draft");
   const canSend = isPostmarkConfigured();
@@ -31,8 +33,8 @@ export default function FollowUpsPage() {
         ) : (
           <ul className="space-y-4">
             {drafts.map((f) => {
-              const contact = getContact(f.contactId);
-              const deal = f.dealId ? getDeal(f.dealId) : undefined;
+              const contact = getContact(user.id, f.contactId);
+              const deal = f.dealId ? getDeal(user.id, f.dealId) : undefined;
               return (
                 <li key={f.id} className="card p-5">
                   <div className="flex items-start justify-between gap-4">
@@ -83,7 +85,7 @@ export default function FollowUpsPage() {
           </h2>
           <ul className="space-y-2">
             {rest.map((f) => {
-              const contact = getContact(f.contactId);
+              const contact = getContact(user.id, f.contactId);
               return (
                 <li
                   key={f.id}

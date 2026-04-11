@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import Database from "better-sqlite3";
 import type {
   Contact,
@@ -10,20 +10,22 @@ import type {
   EmailCategory,
   EmailPriority,
   FollowUp,
+  Session,
   StoreShape,
+  User,
 } from "./types";
 import { seedStore } from "./seed";
 
-// SQLite-backed store. The exported API is identical to the previous JSON
-// implementation so call sites don't need to change. The big wins over the
-// JSON file:
-//   - writes are atomic (single process) / coordinated (WAL mode)
-//   - upserts are race-safe via ON CONFLICT
-//   - we stop reading the entire world on every request
+// SQLite-backed store. Every user-owned table carries a `userId` foreign
+// key so multiple accounts can share one DB file. Every exported query
+// takes a `userId` as its first argument and scopes its SELECT/INSERT
+// accordingly — there is no implicit "current user" context inside the
+// store module. Call sites read the current user from cookies and pass
+// the id in explicitly. This keeps the scoping boundary auditable.
 //
-// The DB file lives at ./data/store.sqlite. On first boot we run migrations
-// and — if the DB is empty — load the sample data from seed.ts so the app
-// is interactive out of the box.
+// The DB file lives at ./data/store.sqlite. On first boot we create all
+// tables (and, for pre-auth installs, migrate existing rows onto a legacy
+// owner user — see migrateLegacyData).
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "store.sqlite");
@@ -39,15 +41,37 @@ function db(): Database.Database {
   conn.pragma("journal_mode = WAL");
   conn.pragma("foreign_keys = ON");
   migrate(conn);
-  maybeSeed(conn);
   _db = conn;
   return conn;
 }
 
 function migrate(conn: Database.Database): void {
   conn.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id             TEXT PRIMARY KEY,
+      email          TEXT NOT NULL COLLATE NOCASE,
+      passwordHash   TEXT NOT NULL,
+      name           TEXT NOT NULL,
+      inboundAddress TEXT COLLATE NOCASE,
+      createdAt      TEXT NOT NULL,
+      updatedAt      TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_inbound
+      ON users(inboundAddress) WHERE inboundAddress IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id         TEXT PRIMARY KEY,
+      userId     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      createdAt  TEXT NOT NULL,
+      expiresAt  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(userId);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expiresAt);
+
     CREATE TABLE IF NOT EXISTS contacts (
       id         TEXT PRIMARY KEY,
+      userId     TEXT,
       name       TEXT NOT NULL,
       email      TEXT NOT NULL COLLATE NOCASE,
       company    TEXT,
@@ -56,10 +80,13 @@ function migrate(conn: Database.Database): void {
       createdAt  TEXT NOT NULL,
       updatedAt  TEXT NOT NULL
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
+    CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(userId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_user_email
+      ON contacts(userId, email);
 
     CREATE TABLE IF NOT EXISTS deals (
       id             TEXT PRIMARY KEY,
+      userId         TEXT,
       title          TEXT NOT NULL,
       contactId      TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
       stage          TEXT NOT NULL,
@@ -70,11 +97,13 @@ function migrate(conn: Database.Database): void {
       createdAt      TEXT NOT NULL,
       updatedAt      TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_deals_user ON deals(userId);
     CREATE INDEX IF NOT EXISTS idx_deals_contact ON deals(contactId);
     CREATE INDEX IF NOT EXISTS idx_deals_stage ON deals(stage);
 
     CREATE TABLE IF NOT EXISTS emails (
       id          TEXT PRIMARY KEY,
+      userId      TEXT,
       fromAddr    TEXT NOT NULL,
       fromName    TEXT,
       toAddr      TEXT NOT NULL,
@@ -89,11 +118,13 @@ function migrate(conn: Database.Database): void {
       dealId      TEXT,
       followUpId  TEXT
     );
+    CREATE INDEX IF NOT EXISTS idx_emails_user ON emails(userId);
     CREATE INDEX IF NOT EXISTS idx_emails_processed ON emails(processed);
     CREATE INDEX IF NOT EXISTS idx_emails_received ON emails(receivedAt);
 
     CREATE TABLE IF NOT EXISTS followUps (
       id            TEXT PRIMARY KEY,
+      userId        TEXT,
       emailId       TEXT,
       dealId        TEXT,
       contactId     TEXT NOT NULL,
@@ -104,24 +135,88 @@ function migrate(conn: Database.Database): void {
       createdAt     TEXT NOT NULL,
       scheduledFor  TEXT
     );
+    CREATE INDEX IF NOT EXISTS idx_followups_user ON followUps(userId);
     CREATE INDEX IF NOT EXISTS idx_followups_status ON followUps(status);
   `);
+
+  // Incremental column adds for existing installs that predate the userId
+  // scoping. SQLite has no "ADD COLUMN IF NOT EXISTS" so we inspect
+  // pragma table_info first.
+  addColumnIfMissing(conn, "contacts", "userId", "TEXT");
+  addColumnIfMissing(conn, "deals", "userId", "TEXT");
+  addColumnIfMissing(conn, "emails", "userId", "TEXT");
+  addColumnIfMissing(conn, "followUps", "userId", "TEXT");
+
+  migrateLegacyData(conn);
 }
 
-function maybeSeed(conn: Database.Database): void {
-  const row = conn
-    .prepare("SELECT COUNT(*) AS c FROM contacts")
-    .get() as { c: number };
-  if (row.c > 0) return;
+function addColumnIfMissing(
+  conn: Database.Database,
+  table: string,
+  column: string,
+  type: string
+): void {
+  const cols = conn
+    .prepare(`PRAGMA table_info(${table})`)
+    .all() as Array<{ name: string }>;
+  if (cols.some((c) => c.name === column)) return;
+  conn.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+}
 
-  const seed = seedStore();
-  const tx = conn.transaction(() => {
-    for (const c of seed.contacts) insertContactRow(conn, c);
-    for (const d of seed.deals) insertDealRow(conn, d);
-    for (const e of seed.emails) insertEmailRow(conn, e);
-    for (const f of seed.followUps) insertFollowUpRow(conn, f);
-  });
-  tx();
+// If the DB already has rows from the pre-auth era (contacts exist but
+// users is empty), attach them to a freshly-minted "legacy owner" account
+// so the new multi-user code has something to scope against. The password
+// is printed to the server console exactly once — the operator should log
+// in with it and change it. For clean installs this is a no-op.
+function migrateLegacyData(conn: Database.Database): void {
+  const userCount = (
+    conn.prepare("SELECT COUNT(*) AS c FROM users").get() as { c: number }
+  ).c;
+  if (userCount > 0) return;
+
+  const hasLegacyRows = (
+    conn
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM contacts) +
+           (SELECT COUNT(*) FROM deals) +
+           (SELECT COUNT(*) FROM emails) +
+           (SELECT COUNT(*) FROM followUps) AS total`
+      )
+      .get() as { total: number }
+  ).total;
+  if (hasLegacyRows === 0) return;
+
+  // Inline the scrypt hash so this migration doesn't import auth.ts —
+  // store.ts is imported from every server entry point (including some
+  // that don't transitively load auth.ts yet at the time this runs), so
+  // a require cycle here would be hard to reason about. The format is
+  // identical to auth.ts's hashPassword output so a log-in with this
+  // password against the real verify path just works.
+  const tempPassword = randomUUID();
+  const salt = randomBytes(16);
+  const hash = scryptSync(tempPassword, salt, 64);
+  const passwordHash = `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
+
+  const id = randomUUID();
+  const nowStr = new Date().toISOString();
+  conn
+    .prepare(
+      `INSERT INTO users (id, email, passwordHash, name, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(id, "owner@localhost", passwordHash, "Legacy Owner", nowStr, nowStr);
+
+  conn.prepare("UPDATE contacts  SET userId = ? WHERE userId IS NULL").run(id);
+  conn.prepare("UPDATE deals     SET userId = ? WHERE userId IS NULL").run(id);
+  conn.prepare("UPDATE emails    SET userId = ? WHERE userId IS NULL").run(id);
+  conn.prepare("UPDATE followUps SET userId = ? WHERE userId IS NULL").run(id);
+
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[smb-ai-ops] migrated pre-auth data to user owner@localhost — ` +
+      `temporary password: ${tempPassword} (change after first login)`
+  );
 }
 
 function now(): string {
@@ -134,8 +229,41 @@ function newId(): string {
 
 // ---------- Row mappers ----------
 
+interface UserRow {
+  id: string;
+  email: string;
+  passwordHash: string;
+  name: string;
+  inboundAddress: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToUser(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    inboundAddress: row.inboundAddress ?? undefined,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+interface SessionRow {
+  id: string;
+  userId: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+function rowToSession(row: SessionRow): Session {
+  return { ...row };
+}
+
 interface ContactRow {
   id: string;
+  userId: string;
   name: string;
   email: string;
   company: string | null;
@@ -148,6 +276,7 @@ interface ContactRow {
 function rowToContact(row: ContactRow): Contact {
   return {
     id: row.id,
+    userId: row.userId,
     name: row.name,
     email: row.email,
     company: row.company ?? undefined,
@@ -160,6 +289,7 @@ function rowToContact(row: ContactRow): Contact {
 
 interface DealRow {
   id: string;
+  userId: string;
   title: string;
   contactId: string;
   stage: DealStage;
@@ -174,6 +304,7 @@ interface DealRow {
 function rowToDeal(row: DealRow): Deal {
   return {
     id: row.id,
+    userId: row.userId,
     title: row.title,
     contactId: row.contactId,
     stage: row.stage,
@@ -188,6 +319,7 @@ function rowToDeal(row: DealRow): Deal {
 
 interface EmailRow {
   id: string;
+  userId: string;
   fromAddr: string;
   fromName: string | null;
   toAddr: string;
@@ -206,6 +338,7 @@ interface EmailRow {
 function rowToEmail(row: EmailRow): Email {
   return {
     id: row.id,
+    userId: row.userId,
     from: row.fromAddr,
     fromName: row.fromName ?? undefined,
     to: row.toAddr,
@@ -224,6 +357,7 @@ function rowToEmail(row: EmailRow): Email {
 
 interface FollowUpRow {
   id: string;
+  userId: string;
   emailId: string | null;
   dealId: string | null;
   contactId: string;
@@ -238,6 +372,7 @@ interface FollowUpRow {
 function rowToFollowUp(row: FollowUpRow): FollowUp {
   return {
     id: row.id,
+    userId: row.userId,
     emailId: row.emailId ?? undefined,
     dealId: row.dealId ?? undefined,
     contactId: row.contactId,
@@ -255,11 +390,12 @@ function rowToFollowUp(row: FollowUpRow): FollowUp {
 function insertContactRow(conn: Database.Database, c: Contact): void {
   conn
     .prepare(
-      `INSERT INTO contacts (id, name, email, company, phone, notes, createdAt, updatedAt)
-       VALUES (@id, @name, @email, @company, @phone, @notes, @createdAt, @updatedAt)`
+      `INSERT INTO contacts (id, userId, name, email, company, phone, notes, createdAt, updatedAt)
+       VALUES (@id, @userId, @name, @email, @company, @phone, @notes, @createdAt, @updatedAt)`
     )
     .run({
       id: c.id,
+      userId: c.userId,
       name: c.name,
       email: c.email,
       company: c.company ?? null,
@@ -273,11 +409,12 @@ function insertContactRow(conn: Database.Database, c: Contact): void {
 function insertDealRow(conn: Database.Database, d: Deal): void {
   conn
     .prepare(
-      `INSERT INTO deals (id, title, contactId, stage, amount, currency, nextStep, lastActivityAt, createdAt, updatedAt)
-       VALUES (@id, @title, @contactId, @stage, @amount, @currency, @nextStep, @lastActivityAt, @createdAt, @updatedAt)`
+      `INSERT INTO deals (id, userId, title, contactId, stage, amount, currency, nextStep, lastActivityAt, createdAt, updatedAt)
+       VALUES (@id, @userId, @title, @contactId, @stage, @amount, @currency, @nextStep, @lastActivityAt, @createdAt, @updatedAt)`
     )
     .run({
       id: d.id,
+      userId: d.userId,
       title: d.title,
       contactId: d.contactId,
       stage: d.stage,
@@ -293,11 +430,12 @@ function insertDealRow(conn: Database.Database, d: Deal): void {
 function insertEmailRow(conn: Database.Database, e: Email): void {
   conn
     .prepare(
-      `INSERT INTO emails (id, fromAddr, fromName, toAddr, subject, body, receivedAt, processed, category, priority, summary, contactId, dealId, followUpId)
-       VALUES (@id, @fromAddr, @fromName, @toAddr, @subject, @body, @receivedAt, @processed, @category, @priority, @summary, @contactId, @dealId, @followUpId)`
+      `INSERT INTO emails (id, userId, fromAddr, fromName, toAddr, subject, body, receivedAt, processed, category, priority, summary, contactId, dealId, followUpId)
+       VALUES (@id, @userId, @fromAddr, @fromName, @toAddr, @subject, @body, @receivedAt, @processed, @category, @priority, @summary, @contactId, @dealId, @followUpId)`
     )
     .run({
       id: e.id,
+      userId: e.userId,
       fromAddr: e.from,
       fromName: e.fromName ?? null,
       toAddr: e.to,
@@ -317,11 +455,12 @@ function insertEmailRow(conn: Database.Database, e: Email): void {
 function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
   conn
     .prepare(
-      `INSERT INTO followUps (id, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor)
-       VALUES (@id, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor)`
+      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor)
+       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor)`
     )
     .run({
       id: f.id,
+      userId: f.userId,
       emailId: f.emailId ?? null,
       dealId: f.dealId ?? null,
       contactId: f.contactId,
@@ -334,46 +473,165 @@ function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
     });
 }
 
+// ---------- Users ----------
+
+export function createUserRow(input: {
+  email: string;
+  passwordHash: string;
+  name: string;
+}): User {
+  const conn = db();
+  const id = newId();
+  const nowStr = now();
+  conn
+    .prepare(
+      `INSERT INTO users (id, email, passwordHash, name, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(id, input.email, input.passwordHash, input.name, nowStr, nowStr);
+  return {
+    id,
+    email: input.email,
+    name: input.name,
+    createdAt: nowStr,
+    updatedAt: nowStr,
+  };
+}
+
+export function getUserById(userId: string): User | undefined {
+  const row = db()
+    .prepare("SELECT * FROM users WHERE id = ?")
+    .get(userId) as UserRow | undefined;
+  return row ? rowToUser(row) : undefined;
+}
+
+export function getUserByEmail(email: string): User | undefined {
+  const row = db()
+    .prepare("SELECT * FROM users WHERE email = ? COLLATE NOCASE")
+    .get(email.trim()) as UserRow | undefined;
+  return row ? rowToUser(row) : undefined;
+}
+
+/**
+ * Returns the password hash for a user, keyed by email. Kept separate from
+ * getUserByEmail so the rest of the app can't accidentally handle hashes.
+ */
+export function getPasswordHashByEmail(email: string): string | undefined {
+  const row = db()
+    .prepare("SELECT passwordHash FROM users WHERE email = ? COLLATE NOCASE")
+    .get(email.trim()) as { passwordHash: string } | undefined;
+  return row?.passwordHash;
+}
+
+export function findUserByInboundAddress(address: string): User | undefined {
+  const row = db()
+    .prepare(
+      "SELECT * FROM users WHERE inboundAddress = ? COLLATE NOCASE LIMIT 1"
+    )
+    .get(address.trim()) as UserRow | undefined;
+  return row ? rowToUser(row) : undefined;
+}
+
+export function getFirstUser(): User | undefined {
+  const row = db()
+    .prepare("SELECT * FROM users ORDER BY createdAt ASC LIMIT 1")
+    .get() as UserRow | undefined;
+  return row ? rowToUser(row) : undefined;
+}
+
+// ---------- Sessions ----------
+
+export function createSessionRow(input: {
+  id: string;
+  userId: string;
+  expiresAt: string;
+}): Session {
+  const conn = db();
+  const createdAt = now();
+  conn
+    .prepare(
+      `INSERT INTO sessions (id, userId, createdAt, expiresAt)
+       VALUES (?, ?, ?, ?)`
+    )
+    .run(input.id, input.userId, createdAt, input.expiresAt);
+  return {
+    id: input.id,
+    userId: input.userId,
+    createdAt,
+    expiresAt: input.expiresAt,
+  };
+}
+
+export function getSession(sessionId: string): Session | undefined {
+  const row = db()
+    .prepare("SELECT * FROM sessions WHERE id = ?")
+    .get(sessionId) as SessionRow | undefined;
+  return row ? rowToSession(row) : undefined;
+}
+
+export function deleteSession(sessionId: string): void {
+  db().prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+}
+
+export function deleteExpiredSessions(): void {
+  db()
+    .prepare("DELETE FROM sessions WHERE expiresAt < ?")
+    .run(new Date().toISOString());
+}
+
 // ---------- Contacts ----------
 
-export function listContacts(): Contact[] {
+export function listContacts(userId: string): Contact[] {
   const rows = db()
-    .prepare("SELECT * FROM contacts ORDER BY name COLLATE NOCASE ASC")
-    .all() as ContactRow[];
+    .prepare(
+      "SELECT * FROM contacts WHERE userId = ? ORDER BY name COLLATE NOCASE ASC"
+    )
+    .all(userId) as ContactRow[];
   return rows.map(rowToContact);
 }
 
-export function getContact(contactId: string): Contact | undefined {
+export function getContact(
+  userId: string,
+  contactId: string
+): Contact | undefined {
   const row = db()
-    .prepare("SELECT * FROM contacts WHERE id = ?")
-    .get(contactId) as ContactRow | undefined;
+    .prepare("SELECT * FROM contacts WHERE id = ? AND userId = ?")
+    .get(contactId, userId) as ContactRow | undefined;
   return row ? rowToContact(row) : undefined;
 }
 
-export function findContactByEmail(email: string): Contact | undefined {
+export function findContactByEmail(
+  userId: string,
+  email: string
+): Contact | undefined {
   const row = db()
-    .prepare("SELECT * FROM contacts WHERE email = ? COLLATE NOCASE LIMIT 1")
-    .get(email.trim()) as ContactRow | undefined;
+    .prepare(
+      "SELECT * FROM contacts WHERE userId = ? AND email = ? COLLATE NOCASE LIMIT 1"
+    )
+    .get(userId, email.trim()) as ContactRow | undefined;
   return row ? rowToContact(row) : undefined;
 }
 
-export function upsertContact(input: {
-  name: string;
-  email: string;
-  company?: string;
-  phone?: string;
-  notes?: string;
-}): Contact {
+export function upsertContact(
+  userId: string,
+  input: {
+    name: string;
+    email: string;
+    company?: string;
+    phone?: string;
+    notes?: string;
+  }
+): Contact {
   const conn = db();
   const nowStr = now();
-  // Race-safe upsert on email. When the row already exists, COALESCE the
-  // incoming fields onto the existing ones so we don't wipe data on partial
-  // updates.
+  // Race-safe upsert on (userId, email). When the row already exists,
+  // COALESCE the incoming fields onto the existing ones so we don't wipe
+  // data on partial updates.
   conn
     .prepare(
-      `INSERT INTO contacts (id, name, email, company, phone, notes, createdAt, updatedAt)
-       VALUES (@id, @name, @email, @company, @phone, @notes, @createdAt, @updatedAt)
-       ON CONFLICT(email) DO UPDATE SET
+      `INSERT INTO contacts (id, userId, name, email, company, phone, notes, createdAt, updatedAt)
+       VALUES (@id, @userId, @name, @email, @company, @phone, @notes, @createdAt, @updatedAt)
+       ON CONFLICT(userId, email) DO UPDATE SET
          name      = CASE WHEN excluded.name  != '' THEN excluded.name  ELSE contacts.name  END,
          company   = COALESCE(excluded.company, contacts.company),
          phone     = COALESCE(excluded.phone,   contacts.phone),
@@ -382,6 +640,7 @@ export function upsertContact(input: {
     )
     .run({
       id: newId(),
+      userId,
       name: input.name,
       email: input.email,
       company: input.company ?? null,
@@ -391,52 +650,59 @@ export function upsertContact(input: {
       updatedAt: nowStr,
     });
 
-  // Re-read (the row we get back may be either the newly inserted one or the
-  // existing-and-updated one; either way we want the canonical current state).
   const row = conn
-    .prepare("SELECT * FROM contacts WHERE email = ? COLLATE NOCASE")
-    .get(input.email) as ContactRow;
+    .prepare(
+      "SELECT * FROM contacts WHERE userId = ? AND email = ? COLLATE NOCASE"
+    )
+    .get(userId, input.email) as ContactRow;
   return rowToContact(row);
 }
 
 // ---------- Deals ----------
 
-export function listDeals(): Deal[] {
+export function listDeals(userId: string): Deal[] {
   const rows = db()
-    .prepare("SELECT * FROM deals ORDER BY lastActivityAt DESC")
-    .all() as DealRow[];
+    .prepare("SELECT * FROM deals WHERE userId = ? ORDER BY lastActivityAt DESC")
+    .all(userId) as DealRow[];
   return rows.map(rowToDeal);
 }
 
-export function getDeal(dealId: string): Deal | undefined {
+export function getDeal(userId: string, dealId: string): Deal | undefined {
   const row = db()
-    .prepare("SELECT * FROM deals WHERE id = ?")
-    .get(dealId) as DealRow | undefined;
+    .prepare("SELECT * FROM deals WHERE id = ? AND userId = ?")
+    .get(dealId, userId) as DealRow | undefined;
   return row ? rowToDeal(row) : undefined;
 }
 
-export function findOpenDealForContact(contactId: string): Deal | undefined {
+export function findOpenDealForContact(
+  userId: string,
+  contactId: string
+): Deal | undefined {
   const row = db()
     .prepare(
       `SELECT * FROM deals
-       WHERE contactId = ? AND stage NOT IN ('won', 'lost')
+       WHERE userId = ? AND contactId = ? AND stage NOT IN ('won', 'lost')
        ORDER BY lastActivityAt DESC
        LIMIT 1`
     )
-    .get(contactId) as DealRow | undefined;
+    .get(userId, contactId) as DealRow | undefined;
   return row ? rowToDeal(row) : undefined;
 }
 
-export function createDeal(input: {
-  title: string;
-  contactId: string;
-  stage?: DealStage;
-  amount?: number;
-  currency?: string;
-  nextStep?: string;
-}): Deal {
+export function createDeal(
+  userId: string,
+  input: {
+    title: string;
+    contactId: string;
+    stage?: DealStage;
+    amount?: number;
+    currency?: string;
+    nextStep?: string;
+  }
+): Deal {
   const deal: Deal = {
     id: newId(),
+    userId,
     title: input.title,
     contactId: input.contactId,
     stage: input.stage ?? "lead",
@@ -452,19 +718,21 @@ export function createDeal(input: {
 }
 
 export function updateDeal(
+  userId: string,
   dealId: string,
-  patch: Partial<Omit<Deal, "id" | "createdAt">>
+  patch: Partial<Omit<Deal, "id" | "userId" | "createdAt">>
 ): Deal | undefined {
   const conn = db();
   const existing = conn
-    .prepare("SELECT * FROM deals WHERE id = ?")
-    .get(dealId) as DealRow | undefined;
+    .prepare("SELECT * FROM deals WHERE id = ? AND userId = ?")
+    .get(dealId, userId) as DealRow | undefined;
   if (!existing) return undefined;
 
   const nowStr = now();
   const lastActivityAt = patch.lastActivityAt ?? nowStr;
   const next: DealRow = {
     id: existing.id,
+    userId: existing.userId,
     title: patch.title ?? existing.title,
     contactId: patch.contactId ?? existing.contactId,
     stage: patch.stage ?? existing.stage,
@@ -487,10 +755,11 @@ export function updateDeal(
          nextStep = @nextStep,
          lastActivityAt = @lastActivityAt,
          updatedAt = @updatedAt
-       WHERE id = @id`
+       WHERE id = @id AND userId = @userId`
     )
     .run({
       id: next.id,
+      userId: next.userId,
       title: next.title,
       contactId: next.contactId,
       stage: next.stage,
@@ -506,30 +775,34 @@ export function updateDeal(
 
 // ---------- Emails ----------
 
-export function listEmails(): Email[] {
+export function listEmails(userId: string): Email[] {
   const rows = db()
-    .prepare("SELECT * FROM emails ORDER BY receivedAt DESC")
-    .all() as EmailRow[];
+    .prepare("SELECT * FROM emails WHERE userId = ? ORDER BY receivedAt DESC")
+    .all(userId) as EmailRow[];
   return rows.map(rowToEmail);
 }
 
-export function getEmail(emailId: string): Email | undefined {
+export function getEmail(userId: string, emailId: string): Email | undefined {
   const row = db()
-    .prepare("SELECT * FROM emails WHERE id = ?")
-    .get(emailId) as EmailRow | undefined;
+    .prepare("SELECT * FROM emails WHERE id = ? AND userId = ?")
+    .get(emailId, userId) as EmailRow | undefined;
   return row ? rowToEmail(row) : undefined;
 }
 
-export function createEmail(input: {
-  from: string;
-  fromName?: string;
-  to: string;
-  subject: string;
-  body: string;
-  receivedAt?: string;
-}): Email {
+export function createEmail(
+  userId: string,
+  input: {
+    from: string;
+    fromName?: string;
+    to: string;
+    subject: string;
+    body: string;
+    receivedAt?: string;
+  }
+): Email {
   const email: Email = {
     id: newId(),
+    userId,
     from: input.from,
     fromName: input.fromName,
     to: input.to,
@@ -543,17 +816,19 @@ export function createEmail(input: {
 }
 
 export function updateEmail(
+  userId: string,
   emailId: string,
-  patch: Partial<Omit<Email, "id">>
+  patch: Partial<Omit<Email, "id" | "userId">>
 ): Email | undefined {
   const conn = db();
   const existing = conn
-    .prepare("SELECT * FROM emails WHERE id = ?")
-    .get(emailId) as EmailRow | undefined;
+    .prepare("SELECT * FROM emails WHERE id = ? AND userId = ?")
+    .get(emailId, userId) as EmailRow | undefined;
   if (!existing) return undefined;
 
   const next: EmailRow = {
     id: existing.id,
+    userId: existing.userId,
     fromAddr: patch.from ?? existing.fromAddr,
     fromName:
       patch.fromName !== undefined ? patch.fromName ?? null : existing.fromName,
@@ -601,7 +876,7 @@ export function updateEmail(
          contactId = @contactId,
          dealId = @dealId,
          followUpId = @followUpId
-       WHERE id = @id`
+       WHERE id = @id AND userId = @userId`
     )
     .run(next);
 
@@ -610,24 +885,38 @@ export function updateEmail(
 
 // ---------- Follow-ups ----------
 
-export function listFollowUps(): FollowUp[] {
+export function listFollowUps(userId: string): FollowUp[] {
   const rows = db()
-    .prepare("SELECT * FROM followUps ORDER BY createdAt DESC")
-    .all() as FollowUpRow[];
+    .prepare("SELECT * FROM followUps WHERE userId = ? ORDER BY createdAt DESC")
+    .all(userId) as FollowUpRow[];
   return rows.map(rowToFollowUp);
 }
 
-export function createFollowUp(input: {
-  contactId: string;
-  emailId?: string;
-  dealId?: string;
-  subject: string;
-  draft: string;
-  reason: string;
-  scheduledFor?: string;
-}): FollowUp {
+export function getFollowUp(
+  userId: string,
+  followUpId: string
+): FollowUp | undefined {
+  const row = db()
+    .prepare("SELECT * FROM followUps WHERE id = ? AND userId = ?")
+    .get(followUpId, userId) as FollowUpRow | undefined;
+  return row ? rowToFollowUp(row) : undefined;
+}
+
+export function createFollowUp(
+  userId: string,
+  input: {
+    contactId: string;
+    emailId?: string;
+    dealId?: string;
+    subject: string;
+    draft: string;
+    reason: string;
+    scheduledFor?: string;
+  }
+): FollowUp {
   const followUp: FollowUp = {
     id: newId(),
+    userId,
     contactId: input.contactId,
     emailId: input.emailId,
     dealId: input.dealId,
@@ -643,17 +932,19 @@ export function createFollowUp(input: {
 }
 
 export function updateFollowUp(
+  userId: string,
   followUpId: string,
-  patch: Partial<Omit<FollowUp, "id" | "createdAt">>
+  patch: Partial<Omit<FollowUp, "id" | "userId" | "createdAt">>
 ): FollowUp | undefined {
   const conn = db();
   const existing = conn
-    .prepare("SELECT * FROM followUps WHERE id = ?")
-    .get(followUpId) as FollowUpRow | undefined;
+    .prepare("SELECT * FROM followUps WHERE id = ? AND userId = ?")
+    .get(followUpId, userId) as FollowUpRow | undefined;
   if (!existing) return undefined;
 
   const next: FollowUpRow = {
     id: existing.id,
+    userId: existing.userId,
     emailId:
       patch.emailId !== undefined ? patch.emailId ?? null : existing.emailId,
     dealId: patch.dealId !== undefined ? patch.dealId ?? null : existing.dealId,
@@ -680,10 +971,11 @@ export function updateFollowUp(
          reason = @reason,
          status = @status,
          scheduledFor = @scheduledFor
-       WHERE id = @id`
+       WHERE id = @id AND userId = @userId`
     )
     .run({
       id: next.id,
+      userId: next.userId,
       emailId: next.emailId,
       dealId: next.dealId,
       contactId: next.contactId,
@@ -697,29 +989,46 @@ export function updateFollowUp(
   return rowToFollowUp(next);
 }
 
-// ---------- Maintenance ----------
+// ---------- Workspace seeding + maintenance ----------
 
-export function resetStore(): StoreShape {
+/**
+ * Load the sample contacts/deals/emails into a user's workspace. Called
+ * automatically the first time a user signs up so there's something to
+ * click on, and also by `/api/reset` to restore a user to a clean seed.
+ */
+export function seedWorkspace(userId: string): void {
   const conn = db();
-  const seed = seedStore();
+  const seed = seedStore(userId);
   const tx = conn.transaction(() => {
-    conn.exec(
-      "DELETE FROM followUps; DELETE FROM emails; DELETE FROM deals; DELETE FROM contacts;"
-    );
     for (const c of seed.contacts) insertContactRow(conn, c);
     for (const d of seed.deals) insertDealRow(conn, d);
     for (const e of seed.emails) insertEmailRow(conn, e);
     for (const f of seed.followUps) insertFollowUpRow(conn, f);
   });
   tx();
-  return getSnapshot();
 }
 
-export function getSnapshot(): StoreShape {
+export function resetStore(userId: string): StoreShape {
+  const conn = db();
+  const tx = conn.transaction(() => {
+    // Cascade-delete is already wired on deals(contactId); we still nuke
+    // dependent rows explicitly so emails/followUps (which don't FK to
+    // contacts) don't dangle.
+    conn.prepare("DELETE FROM followUps WHERE userId = ?").run(userId);
+    conn.prepare("DELETE FROM emails WHERE userId = ?").run(userId);
+    conn.prepare("DELETE FROM deals WHERE userId = ?").run(userId);
+    conn.prepare("DELETE FROM contacts WHERE userId = ?").run(userId);
+  });
+  tx();
+  seedWorkspace(userId);
+  return getSnapshot(userId);
+}
+
+export function getSnapshot(userId: string): StoreShape {
   return {
-    contacts: listContacts(),
-    deals: listDeals(),
-    emails: listEmails(),
-    followUps: listFollowUps(),
+    contacts: listContacts(userId),
+    deals: listDeals(userId),
+    emails: listEmails(userId),
+    followUps: listFollowUps(userId),
   };
 }
