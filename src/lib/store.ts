@@ -689,6 +689,20 @@ export function findOpenDealForContact(
   return row ? rowToDeal(row) : undefined;
 }
 
+export function listDealsForContact(
+  userId: string,
+  contactId: string
+): Deal[] {
+  const rows = db()
+    .prepare(
+      `SELECT * FROM deals
+       WHERE userId = ? AND contactId = ?
+       ORDER BY lastActivityAt DESC`
+    )
+    .all(userId, contactId) as DealRow[];
+  return rows.map(rowToDeal);
+}
+
 export function createDeal(
   userId: string,
   input: {
@@ -787,6 +801,34 @@ export function getEmail(userId: string, emailId: string): Email | undefined {
     .prepare("SELECT * FROM emails WHERE id = ? AND userId = ?")
     .get(emailId, userId) as EmailRow | undefined;
   return row ? rowToEmail(row) : undefined;
+}
+
+export function listEmailsForContact(
+  userId: string,
+  contactId: string
+): Email[] {
+  const rows = db()
+    .prepare(
+      `SELECT * FROM emails
+       WHERE userId = ? AND contactId = ?
+       ORDER BY receivedAt DESC`
+    )
+    .all(userId, contactId) as EmailRow[];
+  return rows.map(rowToEmail);
+}
+
+export function listEmailsForDeal(
+  userId: string,
+  dealId: string
+): Email[] {
+  const rows = db()
+    .prepare(
+      `SELECT * FROM emails
+       WHERE userId = ? AND dealId = ?
+       ORDER BY receivedAt DESC`
+    )
+    .all(userId, dealId) as EmailRow[];
+  return rows.map(rowToEmail);
 }
 
 export function createEmail(
@@ -900,6 +942,34 @@ export function getFollowUp(
     .prepare("SELECT * FROM followUps WHERE id = ? AND userId = ?")
     .get(followUpId, userId) as FollowUpRow | undefined;
   return row ? rowToFollowUp(row) : undefined;
+}
+
+export function listFollowUpsForContact(
+  userId: string,
+  contactId: string
+): FollowUp[] {
+  const rows = db()
+    .prepare(
+      `SELECT * FROM followUps
+       WHERE userId = ? AND contactId = ?
+       ORDER BY createdAt DESC`
+    )
+    .all(userId, contactId) as FollowUpRow[];
+  return rows.map(rowToFollowUp);
+}
+
+export function listFollowUpsForDeal(
+  userId: string,
+  dealId: string
+): FollowUp[] {
+  const rows = db()
+    .prepare(
+      `SELECT * FROM followUps
+       WHERE userId = ? AND dealId = ?
+       ORDER BY createdAt DESC`
+    )
+    .all(userId, dealId) as FollowUpRow[];
+  return rows.map(rowToFollowUp);
 }
 
 export function createFollowUp(

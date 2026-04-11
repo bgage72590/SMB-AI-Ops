@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listContacts, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
@@ -43,9 +44,17 @@ export default function ContactsPage() {
                   d.stage !== "lost"
               );
               return (
-                <tr key={contact.id} className="hover:bg-ink-50/50">
+                <tr
+                  key={contact.id}
+                  className="hover:bg-ink-50/50 cursor-pointer"
+                >
                   <td className="px-4 py-3 font-medium text-ink-900">
-                    {contact.name}
+                    <Link
+                      href={`/contacts/${contact.id}`}
+                      className="hover:text-accent"
+                    >
+                      {contact.name}
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-ink-700">
                     {contact.company || "—"}

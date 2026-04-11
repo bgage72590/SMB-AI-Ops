@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StageBadge } from "@/components/Badge";
 import { getContact, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
@@ -56,29 +57,31 @@ export default function DealsPage() {
                 {column.map((deal) => {
                   const contact = getContact(user.id, deal.contactId);
                   return (
-                    <li
-                      key={deal.id}
-                      className="rounded-lg border border-ink-100 p-2 bg-ink-50/50"
-                    >
-                      <div className="font-medium text-sm text-ink-900 truncate">
-                        {deal.title}
-                      </div>
-                      <div className="text-xs text-ink-500 truncate">
-                        {contact?.name || "—"}
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-xs font-semibold text-ink-700">
-                          {formatCurrency(deal.amount, deal.currency)}
-                        </span>
-                        <span className="text-[10px] text-ink-400">
-                          {formatRelative(deal.lastActivityAt)}
-                        </span>
-                      </div>
-                      {deal.nextStep && (
-                        <div className="text-[11px] text-ink-600 mt-1 line-clamp-2">
-                          → {deal.nextStep}
+                    <li key={deal.id}>
+                      <Link
+                        href={`/deals/${deal.id}`}
+                        className="block rounded-lg border border-ink-100 p-2 bg-ink-50/50 hover:bg-white hover:border-accent/40 transition"
+                      >
+                        <div className="font-medium text-sm text-ink-900 truncate">
+                          {deal.title}
                         </div>
-                      )}
+                        <div className="text-xs text-ink-500 truncate">
+                          {contact?.name || "—"}
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs font-semibold text-ink-700">
+                            {formatCurrency(deal.amount, deal.currency)}
+                          </span>
+                          <span className="text-[10px] text-ink-400">
+                            {formatRelative(deal.lastActivityAt)}
+                          </span>
+                        </div>
+                        {deal.nextStep && (
+                          <div className="text-[11px] text-ink-600 mt-1 line-clamp-2">
+                            → {deal.nextStep}
+                          </div>
+                        )}
+                      </Link>
                     </li>
                   );
                 })}
