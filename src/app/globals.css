@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: #f6f7f9;
+  color: #11172a;
+}
+
+body {
+  font-feature-settings: "cv11", "ss01", "ss02";
+}
+
+.card {
+  @apply bg-white rounded-xl shadow-card border border-ink-100;
+}
