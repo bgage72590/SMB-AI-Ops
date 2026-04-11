@@ -93,7 +93,7 @@ export default function JobDetailPage({ params }: Props) {
                 {contact.company && (
                   <span className="text-fg-subtle"> · {contact.company}</span>
                 )}
-                <span className="text-ink-300"> · </span>
+                <span className="text-fg-subtle"> · </span>
                 <a
                   href={`mailto:${contact.email}`}
                   className="hover:text-accent"
