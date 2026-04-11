@@ -72,11 +72,11 @@ describe("computeStats", () => {
       company: "Acme",
     });
 
-    // An open deal (lead stage) worth $5k.
+    // An open job (inquiry stage) worth $5k.
     createDeal(user.id, {
-      title: "Acme demo",
+      title: "Wedding party — Acme",
       contactId: contact.id,
-      stage: "lead",
+      stage: "inquiry",
       amount: 5000,
       currency: "USD",
     });
@@ -85,25 +85,25 @@ describe("computeStats", () => {
     expect(stats.newEmails).toBeGreaterThanOrEqual(1);
     expect(stats.newContacts).toBeGreaterThanOrEqual(1);
     expect(stats.openPipelineValue).toBeGreaterThanOrEqual(5000);
-    expect(stats.dealsByStage.lead).toBeGreaterThanOrEqual(1);
+    expect(stats.dealsByStage.inquiry).toBeGreaterThanOrEqual(1);
   });
 
-  it("does not count closed deals in open pipeline value", () => {
+  it("does not count terminal jobs in open pipeline value", () => {
     const user = makeUser();
     const contact = upsertContact(user.id, {
       name: "Closed Co",
       email: "closed@example.com",
     });
     createDeal(user.id, {
-      title: "Closed deal",
+      title: "Finished job",
       contactId: contact.id,
-      stage: "won",
+      stage: "completed",
       amount: 100000,
       currency: "USD",
     });
     const stats = computeStats(user.id);
     expect(stats.openPipelineValue).toBe(0);
-    expect(stats.dealsByStage.won).toBeUndefined();
+    expect(stats.dealsByStage.completed).toBeUndefined();
   });
 });
 
@@ -115,7 +115,7 @@ describe("renderDigestBody", () => {
     expect(body).toContain("Shop");
     expect(body).toContain("Headline paragraph here.");
     expect(body).toContain("New emails:");
-    expect(body).toContain("Open pipeline value:");
+    expect(body).toContain("Open job value:");
     expect(body).toContain("https://test.example");
   });
 });

@@ -57,11 +57,11 @@ const TriageSchema = z.object({
     .object({
       title: z.string(),
       stage: z.enum([
-        "lead",
-        "qualified",
-        "proposal",
-        "negotiation",
-        "won",
+        "inquiry",
+        "quoted",
+        "scheduled",
+        "in_progress",
+        "completed",
         "lost",
       ]),
       amount: z.number().optional(),
@@ -73,29 +73,41 @@ const TriageSchema = z.object({
 
 export type TriageResult = z.infer<typeof TriageSchema>;
 
-const TRIAGE_SYSTEM = `You are the AI office manager for a small business owner.
-You read raw email and extract structured information so the CRM stays up to date
-without the owner having to touch it.
+const TRIAGE_SYSTEM = `You are the AI office manager for the owner of a
+local service business (think salon, HVAC, cleaners, plumber, dentist,
+gym, lawn care, tutor). You read raw email and extract structured
+information so the CRM ("jobs" and "clients") stays current without the
+owner having to touch it.
 
 You ALWAYS respond by calling the provided tool. Never respond with prose.
 
 Classification rules:
-- "new_lead": first-touch prospects asking for a demo, quote, or information.
-- "deal_update": existing customers/prospects responding about an in-flight deal.
-- "invoice": payment confirmations, AR/AP, billing questions.
-- "follow_up_needed": owner needs to reply but the prospect is waiting on them.
-- "scheduling": meeting requests, reschedules, calendar coordination.
+- "new_lead": a prospective client asking about a service, price, or availability.
+- "deal_update": an existing client responding about a job in progress, a quote, or an upcoming appointment.
+- "invoice": payment confirmations, receipts, billing questions.
+- "follow_up_needed": the client is waiting on the owner to reply.
+- "scheduling": appointment booking, rescheduling, or calendar coordination.
 - "other": anything else (newsletters, spam, personal).
 
 Priority rules:
-- "urgent": explicit deadline, unhappy customer, blocker.
-- "high": revenue on the line, prospect going cold, open question.
-- "normal": routine updates.
+- "urgent": same-day job, unhappy client, appointment issue today.
+- "high": revenue on the line, client going cold, open question about a quote.
+- "normal": routine confirmations and updates.
 - "low": informational, no action needed.
+
+Job lifecycle stages (use these values for suggested_deal.stage):
+- "inquiry": they just reached out, nothing booked.
+- "quoted": an estimate was sent.
+- "scheduled": an appointment is on the books.
+- "in_progress": the service is actively being delivered.
+- "completed": the job is done and paid.
+- "lost": the client declined or ghosted.
 
 Always populate \`summary\` with ONE sentence the owner can scan in a second.
 Only populate \`suggested_contact\` / \`suggested_deal\` when the email clearly
-implies them. Set \`needs_follow_up\` to true if the owner should send a reply.`;
+implies them. "suggested_deal.title" should describe the job (e.g.
+"Balayage + cut for Sarah", "Drain clear — 12 Oak St"), not a company name.
+Set \`needs_follow_up\` to true if the owner should send a reply.`;
 
 const TRIAGE_TOOL = {
   name: "record_triage",
@@ -135,11 +147,11 @@ const TRIAGE_TOOL = {
           stage: {
             type: "string",
             enum: [
-              "lead",
-              "qualified",
-              "proposal",
-              "negotiation",
-              "won",
+              "inquiry",
+              "quoted",
+              "scheduled",
+              "in_progress",
+              "completed",
               "lost",
             ],
           },
@@ -211,10 +223,24 @@ export async function triageEmailSafe(email: Email): Promise<TriageResult> {
 function heuristicTriage(email: Email): TriageResult {
   const text = `${email.subject} ${email.body}`.toLowerCase();
   let category: EmailCategory = "other";
-  if (/\b(invoice|paid|payment|ach|receipt)\b/.test(text)) category = "invoice";
-  else if (/\b(demo|interested|pricing|quote|trial)\b/.test(text)) category = "new_lead";
-  else if (/\b(proposal|sow|contract|revised|reviewed)\b/.test(text)) category = "deal_update";
-  else if (/\b(meet|schedule|calendar|availability|reschedule)\b/.test(text)) category = "scheduling";
+  if (/\b(invoice|paid|payment|ach|receipt|zelle|venmo)\b/.test(text))
+    category = "invoice";
+  else if (
+    /\b(quote|estimate|pricing|price|how much|availability|book|appointment|interested|service)\b/.test(
+      text
+    )
+  )
+    category = "new_lead";
+  else if (
+    /\b(confirm|rescheduling|reschedule|update|revised|change)\b/.test(text)
+  )
+    category = "deal_update";
+  else if (
+    /\b(meet|schedule|calendar|time slot|what times|when can|reschedule)\b/.test(
+      text
+    )
+  )
+    category = "scheduling";
   else if (/\?/.test(email.body)) category = "follow_up_needed";
 
   const priority: EmailPriority =
@@ -234,17 +260,21 @@ function heuristicTriage(email: Email): TriageResult {
 // ---------- Follow-up drafting ----------
 
 const DRAFT_SYSTEM = `You draft short, human-sounding follow-up emails on behalf of
-a small business owner. You are NOT a marketer — write like a founder would.
+the owner of a local service business (salon, HVAC, cleaners, plumber,
+dentist, gym, lawn care, tutor). You write like the owner would — warm,
+direct, and specific.
 
 Rules:
-- 4-7 sentences, no fluff.
-- Lead with the concrete next step, not pleasantries.
-- Never invent facts, prices, or timelines that aren't in the context.
+- 3-6 sentences, no fluff.
+- Lead with the concrete next step — confirming a time, sending a quote,
+  or answering the client's question.
+- Never invent prices, availability, or service details that aren't in the context.
+- Use the client's first name, not their full name.
 - Sign off with "— [Owner]" as a placeholder the user will replace.
 - If a "Scheduling link" is provided in the context AND the reply is about
-  scheduling a call, meeting, demo, or intro, include the link verbatim on
-  its own line and tell them to grab any slot that works. Do NOT invent or
-  paraphrase the URL. If no link is provided, offer to send times yourself.
+  booking or rescheduling an appointment, include the link verbatim on its
+  own line and tell them to grab any slot that works. Do NOT invent or
+  paraphrase the URL. If no link is provided, offer specific times yourself.
 - Output JSON only, via the provided tool.`;
 
 const DRAFT_TOOL = {

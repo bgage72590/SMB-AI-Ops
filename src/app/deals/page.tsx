@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StageBadge } from "@/components/Badge";
+import { PageHeader } from "@/components/ui";
 import { getContact, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import type { DealStage } from "@/lib/types";
@@ -7,52 +8,66 @@ import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-const COLUMNS: DealStage[] = [
-  "lead",
-  "qualified",
-  "proposal",
-  "negotiation",
-  "won",
-  "lost",
+// Left-to-right: the lifecycle a local-service job moves through.
+// `completed` and `lost` are terminal columns we still render so the
+// owner can glance at the week's won/lost work.
+const COLUMNS: Array<{ stage: DealStage; label: string }> = [
+  { stage: "inquiry", label: "Inquiries" },
+  { stage: "quoted", label: "Quoted" },
+  { stage: "scheduled", label: "Scheduled" },
+  { stage: "in_progress", label: "In progress" },
+  { stage: "completed", label: "Completed" },
+  { stage: "lost", label: "Lost" },
 ];
 
-export default function DealsPage() {
+export default function JobsPage() {
   const user = requireUser();
   const deals = listDeals(user.id);
   const byStage: Record<DealStage, typeof deals> = {
-    lead: [],
-    qualified: [],
-    proposal: [],
-    negotiation: [],
-    won: [],
+    inquiry: [],
+    quoted: [],
+    scheduled: [],
+    in_progress: [],
+    completed: [],
     lost: [],
   };
   for (const d of deals) byStage[d.stage].push(d);
 
+  const openValue = deals
+    .filter((d) => d.stage !== "completed" && d.stage !== "lost")
+    .reduce((sum, d) => sum + d.amount, 0);
+
   return (
     <div className="space-y-6">
-      <section>
-        <h1 className="text-2xl font-semibold text-ink-900">Deals</h1>
-        <p className="text-ink-500 mt-1">
-          {deals.length} total · drag-free pipeline view
-        </p>
-      </section>
+      <PageHeader
+        eyebrow="Pipeline"
+        title="Jobs"
+        description={`${deals.length} total · ${formatCurrency(openValue)} open`}
+      />
 
       <div className="grid md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {COLUMNS.map((stage) => {
+        {COLUMNS.map(({ stage, label }) => {
           const column = byStage[stage];
           const total = column.reduce((s, d) => s + d.amount, 0);
           return (
-            <div key={stage} className="card p-3 min-h-[200px]">
+            <div
+              key={stage}
+              className="bg-surface border border-border rounded-xl p-3 min-h-[200px] shadow-card"
+            >
               <div className="flex items-center justify-between mb-3">
-                <StageBadge stage={stage} />
-                <span className="text-xs text-ink-400">
+                <div className="flex items-center gap-2">
+                  <StageBadge stage={stage} />
+                  <span className="text-xs text-fg-subtle">{column.length}</span>
+                </div>
+                <span className="text-xs text-fg-subtle tabular-nums">
                   {formatCurrency(total)}
                 </span>
               </div>
               <ul className="space-y-2">
                 {column.length === 0 && (
-                  <li className="text-xs text-ink-300 py-2">empty</li>
+                  <li className="text-xs text-fg-subtle py-2 italic">
+                    {label.toLowerCase()} is empty
+                  </li>
                 )}
                 {column.map((deal) => {
                   const contact = getContact(user.id, deal.contactId);
@@ -60,24 +75,24 @@ export default function DealsPage() {
                     <li key={deal.id}>
                       <Link
                         href={`/deals/${deal.id}`}
-                        className="block rounded-lg border border-ink-100 p-2 bg-ink-50/50 hover:bg-white hover:border-accent/40 transition"
+                        className="block rounded-lg border border-border p-2 bg-surface-2/60 hover:bg-surface hover:border-accent/40 transition"
                       >
-                        <div className="font-medium text-sm text-ink-900 truncate">
+                        <div className="font-medium text-sm text-fg truncate">
                           {deal.title}
                         </div>
-                        <div className="text-xs text-ink-500 truncate">
+                        <div className="text-xs text-fg-muted truncate">
                           {contact?.name || "—"}
                         </div>
                         <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs font-semibold text-ink-700">
+                          <span className="text-xs font-semibold text-fg tabular-nums">
                             {formatCurrency(deal.amount, deal.currency)}
                           </span>
-                          <span className="text-[10px] text-ink-400">
+                          <span className="text-[10px] text-fg-subtle">
                             {formatRelative(deal.lastActivityAt)}
                           </span>
                         </div>
                         {deal.nextStep && (
-                          <div className="text-[11px] text-ink-600 mt-1 line-clamp-2">
+                          <div className="text-[11px] text-fg-muted mt-1 line-clamp-2">
                             → {deal.nextStep}
                           </div>
                         )}

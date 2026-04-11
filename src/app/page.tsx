@@ -27,7 +27,9 @@ export default function DashboardPage() {
   const followUps = listFollowUps(user.id);
 
   const unprocessed = emails.filter((e) => !e.processed).length;
-  const openDeals = deals.filter((d) => d.stage !== "won" && d.stage !== "lost");
+  const openDeals = deals.filter(
+    (d) => d.stage !== "completed" && d.stage !== "lost"
+  );
   const pipelineValue = openDeals.reduce((sum, d) => sum + d.amount, 0);
   const pendingFollowUps = followUps.filter((f) => f.status === "draft").length;
 
@@ -73,9 +75,9 @@ export default function DashboardPage() {
           hint={`${emails.length} total in inbox`}
         />
         <Stat
-          label="Pipeline value"
+          label="Open job value"
           value={formatCurrency(pipelineValue)}
-          hint={`${openDeals.length} open deals`}
+          hint={`${openDeals.length} open jobs`}
         />
         <Stat
           label="Follow-ups pending"
@@ -83,9 +85,9 @@ export default function DashboardPage() {
           hint="drafts waiting for review"
         />
         <Stat
-          label="Contacts"
+          label="Clients"
           value={contacts.length}
-          hint="in your CRM"
+          hint="in your book"
         />
       </section>
 
@@ -139,14 +141,14 @@ export default function DashboardPage() {
 
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-ink-900">Top open deals</h2>
+            <h2 className="font-semibold text-fg">Top open jobs</h2>
             <Link href="/deals" className="text-sm text-accent hover:underline">
               View all
             </Link>
           </div>
-          <ul className="divide-y divide-ink-100">
+          <ul className="divide-y divide-border">
             {hotDeals.length === 0 && (
-              <li className="py-4 text-sm text-ink-400">No open deals.</li>
+              <li className="py-4 text-sm text-fg-subtle">No open jobs.</li>
             )}
             {hotDeals.map((deal) => {
               const contact = getContact(user.id, deal.contactId);
