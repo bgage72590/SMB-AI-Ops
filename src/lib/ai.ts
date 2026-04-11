@@ -155,7 +155,10 @@ const TRIAGE_TOOL = {
 };
 
 export async function triageEmail(email: Email): Promise<TriageResult> {
-  const response = await client().messages.create({
+  // Use the beta prompt-caching endpoint so `cache_control` is honored by
+  // the API and typed by the SDK. In 0.30.x of @anthropic-ai/sdk,
+  // cache_control only exists on the beta namespace's TextBlockParam.
+  const response = await client().beta.promptCaching.messages.create({
     model: DEFAULT_MODEL,
     max_tokens: 1024,
     system: [
@@ -293,7 +296,8 @@ export async function draftFollowUp(
 ): Promise<FollowUpDraft> {
   if (!isAIConfigured()) return heuristicDraft(input);
   try {
-    const response = await client().messages.create({
+    // See triageEmail for why this uses the beta prompt-caching endpoint.
+    const response = await client().beta.promptCaching.messages.create({
       model: DEFAULT_MODEL,
       max_tokens: 1024,
       system: [
