@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "./ui";
 
 interface Props {
   emailId?: string;
   label?: string;
-  variant?: "primary" | "ghost";
+  variant?: "primary" | "ghost" | "secondary";
 }
 
 export function ProcessButton({ emailId, label, variant = "primary" }: Props) {
@@ -35,24 +36,20 @@ export function ProcessButton({ emailId, label, variant = "primary" }: Props) {
     }
   }
 
-  const classes =
-    variant === "primary"
-      ? "bg-accent text-white hover:bg-accent/90"
-      : "bg-ink-50 text-ink-700 hover:bg-ink-100";
-
   return (
     <div className="inline-flex items-center gap-2">
-      <button
+      <Button
         type="button"
         onClick={run}
-        disabled={loading}
-        className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${classes} disabled:opacity-50`}
+        loading={loading}
+        variant={variant}
+        size="sm"
       >
         {loading
-          ? "Processing..."
+          ? "Processing…"
           : label || (emailId ? "Process email" : "Process inbox")}
-      </button>
-      {error && <span className="text-xs text-rose-600">{error}</span>}
+      </Button>
+      {error && <span className="text-xs text-danger">{error}</span>}
     </div>
   );
 }

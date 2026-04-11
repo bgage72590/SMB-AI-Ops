@@ -1,11 +1,20 @@
 import Link from "next/link";
-import { Stat } from "@/components/Stat";
 import { ProcessButton } from "@/components/ProcessButton";
+import { FollowUpActions } from "@/components/FollowUpActions";
 import {
   CategoryBadge,
   PriorityBadge,
   StageBadge,
 } from "@/components/Badge";
+import {
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  EmptyState,
+  PageHeader,
+  StatCard,
+} from "@/components/ui";
 import {
   getContact,
   listContacts,
@@ -15,9 +24,12 @@ import {
 } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { isAIConfigured } from "@/lib/ai";
+import { isPostmarkConfigured } from "@/lib/postmark";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default function DashboardPage() {
   const user = requireUser();
@@ -25,168 +37,360 @@ export default function DashboardPage() {
   const deals = listDeals(user.id);
   const contacts = listContacts(user.id);
   const followUps = listFollowUps(user.id);
+  const canSend = isPostmarkConfigured();
 
-  const unprocessed = emails.filter((e) => !e.processed).length;
+  const unprocessed = emails.filter((e) => !e.processed);
   const openDeals = deals.filter(
     (d) => d.stage !== "completed" && d.stage !== "lost"
   );
-  const pipelineValue = openDeals.reduce((sum, d) => sum + d.amount, 0);
-  const pendingFollowUps = followUps.filter((f) => f.status === "draft").length;
+  const openPipelineValue = openDeals.reduce((sum, d) => sum + d.amount, 0);
+  const pendingDrafts = followUps.filter((f) => f.status === "draft");
 
-  const recentEmails = emails.slice(0, 5);
-  const hotDeals = openDeals
+  // "Booked this week" — completed jobs whose lastActivityAt is in the
+  // last 7 days. Clean directional metric for a local service business.
+  const weekAgo = Date.now() - WEEK_MS;
+  const bookedThisWeek = deals
+    .filter((d) => d.stage === "completed")
+    .filter((d) => new Date(d.lastActivityAt).getTime() >= weekAgo)
+    .reduce((sum, d) => sum + d.amount, 0);
+
+  const newClientsThisWeek = contacts.filter(
+    (c) => new Date(c.createdAt).getTime() >= weekAgo
+  ).length;
+
+  // "AI just did this" — emails the pipeline has already triaged,
+  // freshest first, with the chip + one-liner summary.
+  const recentlyTriaged = emails
+    .filter((e) => e.processed)
     .slice()
-    .sort((a, b) => b.amount - a.amount)
+    .sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1))
     .slice(0, 5);
 
+  const hotJobs = openDeals
+    .slice()
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 4);
+
   const firstName = user.name.split(" ")[0] || user.name;
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  // The hero "needs you right now" count rolls up every category of
+  // owner attention into one number so the owner sees a clear
+  // "X items are waiting on me" the moment they log in.
+  const needsYouCount = unprocessed.length + pendingDrafts.length;
 
   return (
     <div className="space-y-8">
-      <section className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink-900">
-            Good morning, {firstName}
-          </h1>
-          <p className="text-ink-500 mt-1">
-            Here&apos;s what&apos;s going on across your business today.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ProcessButton />
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Dashboard"
+        title={`${greeting}, ${firstName}`}
+        description="Here's what's waiting on you and what the AI already handled."
+        actions={<ProcessButton />}
+      />
 
       {!isAIConfigured() && (
-        <div className="card p-4 border-amber-200 bg-amber-50">
-          <p className="text-sm text-amber-900">
-            <strong>Heads up:</strong> <code>ANTHROPIC_API_KEY</code> is not set, so
-            email triage and follow-up drafting are running in heuristic
-            fallback mode. Copy <code>.env.example</code> to <code>.env</code>{" "}
-            and add your key to enable real AI.
+        <Card className="p-4 border-warning/40 bg-warning-soft">
+          <p className="text-sm text-fg">
+            <strong>Heads up:</strong> <code>ANTHROPIC_API_KEY</code> is not
+            set, so email triage and follow-up drafting are running in
+            heuristic fallback mode. Copy <code>.env.example</code> to{" "}
+            <code>.env</code> and add your key to enable real AI.
           </p>
-        </div>
+        </Card>
       )}
 
+      {/* Hero: what needs the owner's attention right now. */}
+      <Card className="overflow-hidden">
+        <div className="grid md:grid-cols-[auto,1fr] items-center gap-6 p-6">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-semibold">
+              Waiting on you
+            </div>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-5xl font-semibold text-fg tabular-nums">
+                {needsYouCount}
+              </span>
+              <span className="text-sm text-fg-muted">
+                {needsYouCount === 1 ? "item" : "items"}
+              </span>
+            </div>
+            <div className="text-xs text-fg-subtle mt-1">
+              {needsYouCount === 0
+                ? "Inbox zero. Nice."
+                : "Across your inbox and drafts."}
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <HeroTile
+              label="Unread emails"
+              value={unprocessed.length}
+              href="/inbox"
+              cta={unprocessed.length > 0 ? "Triage" : "Open inbox"}
+            />
+            <HeroTile
+              label="Drafts to approve"
+              value={pendingDrafts.length}
+              href="/followups"
+              cta={pendingDrafts.length > 0 ? "Review" : "No drafts"}
+            />
+            <HeroTile
+              label="New inquiries"
+              value={
+                emails.filter(
+                  (e) =>
+                    e.category === "new_lead" &&
+                    new Date(e.receivedAt).getTime() >= weekAgo
+                ).length
+              }
+              href="/inbox"
+              cta="See details"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* At-a-glance stats. */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Stat
-          label="Unread emails"
-          value={unprocessed}
-          hint={`${emails.length} total in inbox`}
+        <StatCard
+          label="Booked this week"
+          value={formatCurrency(bookedThisWeek)}
+          hint={`${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}`}
         />
-        <Stat
+        <StatCard
           label="Open job value"
-          value={formatCurrency(pipelineValue)}
-          hint={`${openDeals.length} open jobs`}
+          value={formatCurrency(openPipelineValue)}
+          hint={`${openDeals.length} open job${openDeals.length === 1 ? "" : "s"}`}
         />
-        <Stat
-          label="Follow-ups pending"
-          value={pendingFollowUps}
-          hint="drafts waiting for review"
+        <StatCard
+          label="Pending follow-ups"
+          value={pendingDrafts.length}
+          hint="drafts awaiting approval"
         />
-        <Stat
+        <StatCard
           label="Clients"
           value={contacts.length}
           hint="in your book"
         />
       </section>
 
-      <section className="grid md:grid-cols-2 gap-6">
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-ink-900">Recent inbox</h2>
-            <Link
-              href="/inbox"
-              className="text-sm text-accent hover:underline"
-            >
-              View all
-            </Link>
-          </div>
-          <ul className="divide-y divide-ink-100">
-            {recentEmails.length === 0 && (
-              <li className="py-4 text-sm text-ink-400">No emails yet.</li>
-            )}
-            {recentEmails.map((email) => (
-              <li key={email.id} className="py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-ink-900 truncate">
-                        {email.fromName || email.from}
-                      </span>
-                      {email.category && (
-                        <CategoryBadge category={email.category} />
-                      )}
-                      {email.priority && (
-                        <PriorityBadge priority={email.priority} />
-                      )}
-                    </div>
-                    <div className="text-sm text-ink-700 truncate">
-                      {email.subject}
-                    </div>
-                    {email.summary && (
-                      <div className="text-xs text-ink-500 mt-1 line-clamp-2">
-                        {email.summary}
+      {/* Two-column: drafts needing approval + AI activity feed. */}
+      <section className="grid lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader
+            title="Needs your approval"
+            subtitle={`${pendingDrafts.length} ${
+              pendingDrafts.length === 1 ? "draft" : "drafts"
+            } from the AI`}
+            action={
+              pendingDrafts.length > 0 ? (
+                <Link
+                  href="/followups"
+                  className="text-xs text-accent hover:underline"
+                >
+                  See all
+                </Link>
+              ) : undefined
+            }
+          />
+          <CardBody>
+            {pendingDrafts.length === 0 ? (
+              <EmptyState
+                icon="✓"
+                title="You're caught up"
+                description="No drafts waiting. New ones appear here when the AI triages inbound mail."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {pendingDrafts.slice(0, 3).map((f) => {
+                  const contact = getContact(user.id, f.contactId);
+                  return (
+                    <li
+                      key={f.id}
+                      className="rounded-lg border border-border bg-surface-2/60 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs text-fg-subtle">
+                            To: {contact?.name || "Unknown"}
+                          </div>
+                          <div className="font-medium text-fg text-sm mt-0.5 truncate">
+                            {f.subject}
+                          </div>
+                          <div className="text-xs text-fg-muted mt-1 line-clamp-2 italic">
+                            {f.reason}
+                          </div>
+                        </div>
+                        <FollowUpActions
+                          id={f.id}
+                          currentStatus={f.status}
+                          canSend={canSend}
+                        />
                       </div>
-                    )}
-                  </div>
-                  <span className="text-xs text-ink-400 whitespace-nowrap">
-                    {formatRelative(email.receivedAt)}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-fg">Top open jobs</h2>
-            <Link href="/deals" className="text-sm text-accent hover:underline">
-              View all
-            </Link>
-          </div>
-          <ul className="divide-y divide-border">
-            {hotDeals.length === 0 && (
-              <li className="py-4 text-sm text-fg-subtle">No open jobs.</li>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-            {hotDeals.map((deal) => {
-              const contact = getContact(user.id, deal.contactId);
-              return (
-                <li key={deal.id} className="py-3">
-                  <div className="flex items-start justify-between gap-3">
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="AI just did this"
+            subtitle="Recent inbox triage activity"
+            action={
+              <Link
+                href="/inbox"
+                className="text-xs text-accent hover:underline"
+              >
+                Open inbox
+              </Link>
+            }
+          />
+          <CardBody>
+            {recentlyTriaged.length === 0 ? (
+              <EmptyState
+                icon="✨"
+                title="Nothing to show yet"
+                description="Once the AI processes an email, the activity will show up here."
+                action={<ProcessButton label="Process inbox now" />}
+              />
+            ) : (
+              <ul className="space-y-3">
+                {recentlyTriaged.map((email) => (
+                  <li
+                    key={email.id}
+                    className="flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {email.category && (
+                          <CategoryBadge category={email.category} />
+                        )}
+                        {email.priority && (
+                          <PriorityBadge priority={email.priority} />
+                        )}
+                      </div>
+                      <div className="text-sm font-medium text-fg mt-1 truncate">
+                        {email.fromName || email.from}
+                      </div>
+                      <div className="text-xs text-fg-muted truncate">
+                        {email.summary || email.subject}
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-fg-subtle whitespace-nowrap">
+                      {formatRelative(email.receivedAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+      </section>
+
+      {/* Top open jobs. */}
+      <Card>
+        <CardHeader
+          title="Top open jobs"
+          subtitle="Highest-value work still in the pipeline"
+          action={
+            <Link href="/deals" className="text-xs text-accent hover:underline">
+              View pipeline
+            </Link>
+          }
+        />
+        <CardBody>
+          {hotJobs.length === 0 ? (
+            <EmptyState
+              icon="📋"
+              title="No open jobs yet"
+              description="Jobs appear here as the AI books appointments and tracks work through the pipeline."
+              action={
+                <Link
+                  href="/deals"
+                  className="inline-flex items-center justify-center h-8 px-3 text-xs rounded-lg bg-surface text-fg border border-border hover:bg-surface-2 transition-colors"
+                >
+                  Open pipeline
+                </Link>
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-border">
+              {hotJobs.map((deal) => {
+                const contact = getContact(user.id, deal.contactId);
+                return (
+                  <li
+                    key={deal.id}
+                    className="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-3"
+                  >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-ink-900 truncate">
-                          {deal.title}
-                        </span>
                         <StageBadge stage={deal.stage} />
+                        <Link
+                          href={`/deals/${deal.id}`}
+                          className="font-medium text-fg truncate hover:text-accent"
+                        >
+                          {deal.title}
+                        </Link>
                       </div>
-                      <div className="text-xs text-ink-500 mt-1">
-                        {contact?.name || "Unknown contact"}
-                        {contact?.company ? ` · ${contact.company}` : ""}
+                      <div className="text-xs text-fg-subtle mt-1">
+                        {contact?.name || "Unknown client"}
                       </div>
                       {deal.nextStep && (
-                        <div className="text-xs text-ink-600 mt-1">
+                        <div className="text-xs text-fg-muted mt-1">
                           Next: {deal.nextStep}
                         </div>
                       )}
                     </div>
-                    <div className="text-right">
-                      <div className="font-semibold text-ink-900">
+                    <div className="text-right whitespace-nowrap">
+                      <div className="font-semibold text-fg tabular-nums">
                         {formatCurrency(deal.amount, deal.currency)}
                       </div>
-                      <div className="text-xs text-ink-400">
+                      <div className="text-[11px] text-fg-subtle">
                         {formatRelative(deal.lastActivityAt)}
                       </div>
                     </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      </section>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
     </div>
+  );
+}
+
+// Small tile used inside the hero card. Click-through to the right
+// page with a lightweight "cta" label on the right.
+function HeroTile({
+  label,
+  value,
+  href,
+  cta,
+}: {
+  label: string;
+  value: number;
+  href: string;
+  cta: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="block rounded-lg border border-border bg-surface-2/60 hover:bg-surface-2 hover:border-accent/40 transition px-4 py-3"
+    >
+      <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-semibold">
+        {label}
+      </div>
+      <div className="mt-1 flex items-baseline justify-between gap-2">
+        <span className="text-2xl font-semibold text-fg tabular-nums">
+          {value}
+        </span>
+        <Chip tone={value > 0 ? "accent" : "neutral"}>{cta}</Chip>
+      </div>
+    </Link>
   );
 }
