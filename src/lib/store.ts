@@ -568,6 +568,15 @@ export function getFirstUser(): User | undefined {
   return row ? rowToUser(row) : undefined;
 }
 
+// Used by the scheduled digest job. Callers iterate over every user and
+// run their own per-user work. Never exposed to end-user API routes.
+export function listAllUsers(): User[] {
+  const rows = db()
+    .prepare("SELECT * FROM users ORDER BY createdAt ASC")
+    .all() as UserRow[];
+  return rows.map(rowToUser);
+}
+
 // ---------- Sessions ----------
 
 export function createSessionRow(input: {
