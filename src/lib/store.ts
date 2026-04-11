@@ -98,6 +98,24 @@ function migrate(conn: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(userId);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_tokens(tokenHash);
 
+    CREATE TABLE IF NOT EXISTS jobs (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT REFERENCES users(id) ON DELETE CASCADE,
+      type        TEXT NOT NULL,
+      payload     TEXT NOT NULL,
+      status      TEXT NOT NULL,
+      attempts    INTEGER NOT NULL DEFAULT 0,
+      maxAttempts INTEGER NOT NULL DEFAULT 3,
+      lastError   TEXT,
+      runAfter    TEXT NOT NULL,
+      createdAt   TEXT NOT NULL,
+      startedAt   TEXT,
+      finishedAt  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_runAfter
+      ON jobs(status, runAfter);
+    CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(userId);
+
     CREATE TABLE IF NOT EXISTS contacts (
       id         TEXT PRIMARY KEY,
       userId     TEXT,
@@ -711,6 +729,183 @@ export function updateUserPasswordHash(
       `UPDATE users SET passwordHash = ?, updatedAt = ? WHERE id = ?`
     )
     .run(passwordHash, now(), userId);
+}
+
+// ---------- Jobs ----------
+
+export type JobStatus = "pending" | "running" | "done" | "failed";
+
+export interface Job {
+  id: string;
+  userId?: string;
+  type: string;
+  payload: unknown;
+  status: JobStatus;
+  attempts: number;
+  maxAttempts: number;
+  lastError?: string;
+  runAfter: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+interface JobRow {
+  id: string;
+  userId: string | null;
+  type: string;
+  payload: string;
+  status: JobStatus;
+  attempts: number;
+  maxAttempts: number;
+  lastError: string | null;
+  runAfter: string;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+function rowToJob(row: JobRow): Job {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.payload);
+  } catch {
+    parsed = null;
+  }
+  return {
+    id: row.id,
+    userId: row.userId ?? undefined,
+    type: row.type,
+    payload: parsed,
+    status: row.status,
+    attempts: row.attempts,
+    maxAttempts: row.maxAttempts,
+    lastError: row.lastError ?? undefined,
+    runAfter: row.runAfter,
+    createdAt: row.createdAt,
+    startedAt: row.startedAt ?? undefined,
+    finishedAt: row.finishedAt ?? undefined,
+  };
+}
+
+export function enqueueJob(input: {
+  type: string;
+  payload: unknown;
+  userId?: string;
+  runAfter?: string;
+  maxAttempts?: number;
+}): Job {
+  const conn = db();
+  const id = newId();
+  const createdAt = now();
+  const runAfter = input.runAfter ?? createdAt;
+  const maxAttempts = input.maxAttempts ?? 3;
+  const payloadText = JSON.stringify(input.payload ?? null);
+  conn
+    .prepare(
+      `INSERT INTO jobs
+         (id, userId, type, payload, status, attempts, maxAttempts, lastError, runAfter, createdAt)
+       VALUES (?, ?, ?, ?, 'pending', 0, ?, NULL, ?, ?)`
+    )
+    .run(id, input.userId ?? null, input.type, payloadText, maxAttempts, runAfter, createdAt);
+  return {
+    id,
+    userId: input.userId,
+    type: input.type,
+    payload: input.payload,
+    status: "pending",
+    attempts: 0,
+    maxAttempts,
+    runAfter,
+    createdAt,
+  };
+}
+
+/**
+ * Atomically claim the next runnable job — a single SQL UPDATE flips one
+ * row from pending->running and returns it. better-sqlite3 is synchronous
+ * and single-threaded within a process, so the UPDATE is serial-safe for
+ * a single-worker deployment. Multiple workers would need a real
+ * queueing backend.
+ */
+export function claimNextJob(): Job | undefined {
+  const conn = db();
+  const nowStr = now();
+  const row = conn
+    .prepare(
+      `SELECT * FROM jobs
+        WHERE status = 'pending' AND runAfter <= ?
+        ORDER BY runAfter ASC
+        LIMIT 1`
+    )
+    .get(nowStr) as JobRow | undefined;
+  if (!row) return undefined;
+
+  const update = conn
+    .prepare(
+      `UPDATE jobs
+          SET status = 'running', startedAt = ?, attempts = attempts + 1
+        WHERE id = ? AND status = 'pending'`
+    )
+    .run(nowStr, row.id);
+
+  if (update.changes !== 1) return undefined; // raced — try again next tick
+
+  row.status = "running";
+  row.startedAt = nowStr;
+  row.attempts = row.attempts + 1;
+  return rowToJob(row);
+}
+
+export function completeJob(id: string): void {
+  db()
+    .prepare(
+      `UPDATE jobs SET status = 'done', finishedAt = ?, lastError = NULL WHERE id = ?`
+    )
+    .run(now(), id);
+}
+
+export function failJob(id: string, message: string): void {
+  const conn = db();
+  const row = conn
+    .prepare("SELECT attempts, maxAttempts FROM jobs WHERE id = ?")
+    .get(id) as { attempts: number; maxAttempts: number } | undefined;
+  if (!row) return;
+
+  if (row.attempts >= row.maxAttempts) {
+    conn
+      .prepare(
+        `UPDATE jobs SET status = 'failed', finishedAt = ?, lastError = ? WHERE id = ?`
+      )
+      .run(now(), message, id);
+  } else {
+    // Exponential backoff: 30s, 2m, 8m, 32m, capped at 1h.
+    const delayMs = Math.min(30_000 * Math.pow(4, row.attempts - 1), 3_600_000);
+    const runAfter = new Date(Date.now() + delayMs).toISOString();
+    conn
+      .prepare(
+        `UPDATE jobs SET status = 'pending', runAfter = ?, lastError = ? WHERE id = ?`
+      )
+      .run(runAfter, message, id);
+  }
+}
+
+export function countPendingJobs(): number {
+  const row = db()
+    .prepare(
+      "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('pending', 'running')"
+    )
+    .get() as { c: number };
+  return row.c;
+}
+
+export function listRecentJobs(limit = 50): Job[] {
+  const rows = db()
+    .prepare(
+      "SELECT * FROM jobs ORDER BY createdAt DESC LIMIT ?"
+    )
+    .all(limit) as JobRow[];
+  return rows.map(rowToJob);
 }
 
 // ---------- Contacts ----------

@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { createEmail, findUserByInboundAddress, getFirstUser } from "@/lib/store";
 import { processEmail } from "@/lib/pipeline";
+import { enqueueEmailProcessing } from "@/lib/jobs";
 import {
   verifyInboundAuth,
   type PostmarkInboundPayload,
 } from "@/lib/postmark";
+
+// When JOB_QUEUE_MODE=async the webhook persists the email, enqueues a
+// process_email job, and acks Postmark immediately. A separate drain
+// (/api/jobs/run on a cron) does the LLM work. This is the recommended
+// prod mode on serverless platforms where webhook handlers have tight
+// timeouts. When the env var is unset we fall back to sync behavior for
+// a zero-config local experience.
+const asyncMode = () => process.env.JOB_QUEUE_MODE === "async";
 
 export const runtime = "nodejs";
 
@@ -80,6 +89,13 @@ export async function POST(request: Request) {
     body,
     receivedAt: payload.Date ? new Date(payload.Date).toISOString() : undefined,
   });
+
+  if (asyncMode()) {
+    // Enqueue and ack. The background worker picks it up; the email is
+    // already persisted so at worst processing is delayed, not lost.
+    const job = enqueueEmailProcessing(owner.id, email.id);
+    return NextResponse.json({ ok: true, emailId: email.id, jobId: job.id });
+  }
 
   // Run the pipeline synchronously. Postmark retries on non-2xx so we want
   // the side-effects committed before we ack.
