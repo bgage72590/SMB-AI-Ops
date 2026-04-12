@@ -22,6 +22,15 @@ const STAGES: Array<{ stage: DealStage; label: string }> = [
   { stage: "lost", label: "Lost" },
 ];
 
+const STAGE_ORDER: Record<DealStage, number> = {
+  inquiry: 0,
+  quoted: 1,
+  scheduled: 2,
+  in_progress: 3,
+  completed: 4,
+  lost: 5,
+};
+
 export default function JobsPage({
   searchParams,
 }: {
@@ -44,14 +53,15 @@ export default function JobsPage({
   );
   const openValue = openDeals.reduce((sum, d) => sum + d.amount, 0);
 
-  const mobileStageFilter = searchParams?.stage as DealStage | undefined;
-  const validFilter = mobileStageFilter && STAGES.some((c) => c.stage === mobileStageFilter);
+  const stageFilter = searchParams?.stage as DealStage | undefined;
+  const validFilter = stageFilter && STAGES.some((c) => c.stage === stageFilter);
 
-  const activeStages = STAGES.filter(({ stage }) => byStage[stage].length > 0);
-  const emptyStages = STAGES.filter(({ stage }) => byStage[stage].length === 0);
+  const filteredDeals = validFilter
+    ? byStage[stageFilter!]
+    : [...deals].sort((a, b) => STAGE_ORDER[a.stage] - STAGE_ORDER[b.stage] || b.amount - a.amount);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -78,7 +88,7 @@ export default function JobsPage({
 
       {/* Pipeline summary bar */}
       {deals.length > 0 && (
-        <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden bg-surface-2">
+        <div className="flex items-center gap-0.5 h-2 rounded-full overflow-hidden bg-surface-2">
           {STAGES.map(({ stage }) => {
             const count = byStage[stage].length;
             if (count === 0) return null;
@@ -94,8 +104,8 @@ export default function JobsPage({
             return (
               <div
                 key={stage}
-                className={`h-full ${colorMap[stage]} transition-all`}
-                style={{ width: `${Math.max(pct, 3)}%` }}
+                className={`h-full rounded-full ${colorMap[stage]} transition-all`}
+                style={{ width: `${Math.max(pct, 4)}%` }}
                 title={`${STAGES.find(s => s.stage === stage)?.label}: ${count}`}
               />
             );
@@ -103,172 +113,142 @@ export default function JobsPage({
         </div>
       )}
 
-      {/* Stage filter chips (mobile) */}
-      <div className="md:hidden flex items-center gap-2 overflow-x-auto pb-1 -mx-4 px-4">
-        <Link
-          href="/deals"
-          className={
-            "shrink-0 inline-flex items-center h-7 px-3 rounded-full text-xs font-medium border transition-colors " +
-            (!validFilter
-              ? "bg-accent text-accent-fg border-accent"
-              : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
-          }
-        >
-          All
-        </Link>
-        {STAGES.map(({ stage, label }) => {
-          const count = byStage[stage].length;
-          if (count === 0) return null;
+      {/* Stage filter chips */}
+      {deals.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <Link
+            href="/deals"
+            className={
+              "shrink-0 inline-flex items-center h-7 px-3 rounded-full text-xs font-medium border transition-colors " +
+              (!validFilter
+                ? "bg-accent text-accent-fg border-accent"
+                : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
+            }
+          >
+            All ({deals.length})
+          </Link>
+          {STAGES.map(({ stage, label }) => {
+            const count = byStage[stage].length;
+            if (count === 0) return null;
+            return (
+              <Link
+                key={stage}
+                href={`/deals?stage=${stage}`}
+                className={
+                  "shrink-0 inline-flex items-center gap-1.5 h-7 px-3 rounded-full text-xs font-medium border transition-colors " +
+                  (stageFilter === stage
+                    ? "bg-accent text-accent-fg border-accent"
+                    : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
+                }
+              >
+                {label} ({count})
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {deals.length === 0 && (
+        <div className="rounded-xl border border-dashed border-border bg-surface py-14 text-center">
+          <div className="text-sm font-medium text-fg">No jobs yet</div>
+          <p className="text-xs text-fg-subtle mt-1 max-w-xs mx-auto">
+            Jobs appear here as the AI books appointments and tracks work through the pipeline.
+          </p>
+        </div>
+      )}
+
+      {/* Desktop table */}
+      {filteredDeals.length > 0 && (
+        <div className="hidden md:block rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-2/50 text-[11px] uppercase tracking-wider text-fg-subtle font-medium">
+                <th className="text-left px-4 py-2.5">Job</th>
+                <th className="text-left px-4 py-2.5">Stage</th>
+                <th className="text-left px-4 py-2.5">Client</th>
+                <th className="text-right px-4 py-2.5">Amount</th>
+                <th className="text-left px-4 py-2.5">Next step</th>
+                <th className="text-right px-4 py-2.5">Activity</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filteredDeals.map((deal) => {
+                const contact = getContact(user.id, deal.contactId);
+                return (
+                  <tr key={deal.id} className="hover:bg-surface-2/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/deals/${deal.id}`}
+                        className="font-medium text-fg hover:text-accent transition-colors"
+                      >
+                        {deal.title}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StageBadge stage={deal.stage} />
+                    </td>
+                    <td className="px-4 py-3 text-fg-muted">
+                      {contact?.name || "\u2014"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-fg tabular-nums">
+                      {formatCurrency(deal.amount, deal.currency)}
+                    </td>
+                    <td className="px-4 py-3 text-fg-muted text-xs max-w-[200px] truncate">
+                      {deal.nextStep || "\u2014"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-[11px] text-fg-subtle whitespace-nowrap">
+                      {formatRelative(deal.lastActivityAt)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Mobile card list */}
+      <div className="md:hidden space-y-2">
+        {filteredDeals.length === 0 && deals.length > 0 && (
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-fg-subtle">
+            No jobs in this stage.
+          </div>
+        )}
+        {filteredDeals.map((deal) => {
+          const contact = getContact(user.id, deal.contactId);
           return (
             <Link
-              key={stage}
-              href={`/deals?stage=${stage}`}
-              className={
-                "shrink-0 inline-flex items-center h-7 px-3 rounded-full text-xs font-medium border transition-colors " +
-                (mobileStageFilter === stage
-                  ? "bg-accent text-accent-fg border-accent"
-                  : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
-              }
+              key={deal.id}
+              href={`/deals/${deal.id}`}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface p-3 hover:border-accent/40 transition"
             >
-              {label} ({count})
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <StageBadge stage={deal.stage} />
+                  <span className="font-medium text-sm text-fg truncate">{deal.title}</span>
+                </div>
+                <div className="text-xs text-fg-muted mt-0.5 flex items-center gap-2">
+                  <span>{contact?.name || "\u2014"}</span>
+                  {deal.nextStep && (
+                    <>
+                      <span className="text-border">&middot;</span>
+                      <span className="truncate">&rarr; {deal.nextStep}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-sm font-semibold text-fg tabular-nums">
+                  {formatCurrency(deal.amount, deal.currency)}
+                </div>
+                <div className="text-[10px] text-fg-subtle">
+                  {formatRelative(deal.lastActivityAt)}
+                </div>
+              </div>
             </Link>
           );
         })}
-      </div>
-
-      {/* Mobile card list */}
-      <div className="md:hidden space-y-4">
-        {deals.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border bg-surface py-12 text-center">
-            <div className="text-sm font-medium text-fg">No jobs yet</div>
-            <p className="text-xs text-fg-subtle mt-1">
-              Jobs appear here as the AI books appointments and tracks work.
-            </p>
-          </div>
-        )}
-        {(validFilter
-          ? [{ stage: mobileStageFilter!, label: STAGES.find(c => c.stage === mobileStageFilter)!.label }]
-          : STAGES
-        )
-          .filter(({ stage }) => byStage[stage].length > 0)
-          .map(({ stage, label }) => (
-            <div key={stage}>
-              {!validFilter && (
-                <div className="flex items-center gap-2 mb-2">
-                  <StageBadge stage={stage} />
-                  <span className="text-xs text-fg-subtle">
-                    {byStage[stage].length} &middot; {formatCurrency(byStage[stage].reduce((s, d) => s + d.amount, 0))}
-                  </span>
-                </div>
-              )}
-              <ul className="space-y-2">
-                {byStage[stage].map((deal) => {
-                  const contact = getContact(user.id, deal.contactId);
-                  return (
-                    <li key={deal.id}>
-                      <Link
-                        href={`/deals/${deal.id}`}
-                        className="block rounded-lg border border-border p-3 bg-surface hover:border-accent/40 transition"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="font-medium text-sm text-fg truncate">{deal.title}</div>
-                            <div className="text-xs text-fg-muted truncate mt-0.5">{contact?.name || "\u2014"}</div>
-                          </div>
-                          <span className="text-xs font-semibold text-fg tabular-nums shrink-0">
-                            {formatCurrency(deal.amount, deal.currency)}
-                          </span>
-                        </div>
-                        {deal.nextStep && (
-                          <div className="text-[11px] text-fg-muted mt-2 line-clamp-2 border-t border-border pt-1.5">
-                            &rarr; {deal.nextStep}
-                          </div>
-                        )}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-      </div>
-
-      {/* Desktop kanban */}
-      <div className="hidden md:block">
-        {deals.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-surface py-16 text-center">
-            <div className="text-sm font-medium text-fg">No jobs yet</div>
-            <p className="text-xs text-fg-subtle mt-1 max-w-sm mx-auto">
-              Jobs appear here as the AI books appointments and tracks work through the pipeline.
-            </p>
-          </div>
-        ) : (
-          <div className="flex gap-3">
-            {/* Active columns — sized proportionally */}
-            {activeStages.map(({ stage, label }) => {
-              const column = byStage[stage];
-              const total = column.reduce((s, d) => s + d.amount, 0);
-              return (
-                <div
-                  key={stage}
-                  className="flex-1 min-w-0 bg-surface border border-border rounded-xl p-3 shadow-[var(--shadow-card)]"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <StageBadge stage={stage} />
-                      <span className="text-[11px] text-fg-subtle tabular-nums">{column.length}</span>
-                    </div>
-                    <span className="text-[11px] text-fg-subtle tabular-nums">{formatCurrency(total)}</span>
-                  </div>
-                  <ul className="space-y-2">
-                    {column.map((deal) => {
-                      const contact = getContact(user.id, deal.contactId);
-                      return (
-                        <li key={deal.id}>
-                          <Link
-                            href={`/deals/${deal.id}`}
-                            className="block rounded-lg border border-border p-3 bg-surface-2/60 hover:bg-surface hover:border-accent/40 transition"
-                          >
-                            <div className="font-medium text-sm text-fg truncate">{deal.title}</div>
-                            <div className="text-xs text-fg-muted truncate mt-0.5">{contact?.name || "\u2014"}</div>
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="text-xs font-semibold text-fg tabular-nums">
-                                {formatCurrency(deal.amount, deal.currency)}
-                              </span>
-                              <span className="text-[10px] text-fg-subtle">
-                                {formatRelative(deal.lastActivityAt)}
-                              </span>
-                            </div>
-                            {deal.nextStep && (
-                              <div className="text-[11px] text-fg-muted mt-1.5 line-clamp-2 border-t border-border pt-1.5">
-                                &rarr; {deal.nextStep}
-                              </div>
-                            )}
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })}
-
-            {/* Empty columns — collapsed stubs */}
-            {emptyStages.length > 0 && (
-              <div className="flex gap-2 shrink-0">
-                {emptyStages.map(({ stage, label }) => (
-                  <div
-                    key={stage}
-                    className="w-20 bg-surface-2/50 border border-border rounded-xl p-2 flex flex-col items-center justify-start pt-3"
-                  >
-                    <StageBadge stage={stage} />
-                    <span className="text-[10px] text-fg-subtle mt-1.5 text-center leading-tight">0</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
