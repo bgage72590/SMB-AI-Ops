@@ -1,15 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import crypto from "node:crypto";
 import {
+  sendEmail,
   verifyHmacSignature,
   verifyInboundAuth,
   verifySharedSecret,
 } from "./postmark";
 
-// Save/restore the two env vars the inbound-auth helpers read.
+// Save/restore the env vars the postmark helpers read.
 const ENV_KEYS = [
   "POSTMARK_WEBHOOK_HMAC_SECRET",
   "POSTMARK_INBOUND_SECRET",
+  "POSTMARK_SERVER_TOKEN",
+  "POSTMARK_FROM_EMAIL",
 ] as const;
 let savedEnv: Record<string, string | undefined>;
 
@@ -149,6 +152,84 @@ describe("verifySharedSecret", () => {
       method: "POST",
     });
     expect(verifySharedSecret(req)).toBe(false);
+  });
+});
+
+describe("sendEmail", () => {
+  const realFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("forwards ReplyTo to the Postmark API when provided", async () => {
+    process.env.POSTMARK_SERVER_TOKEN = "server-token";
+    process.env.POSTMARK_FROM_EMAIL = "owner@example.test";
+
+    const captured: { body?: unknown } = {};
+    globalThis.fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      captured.body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      return new Response(
+        JSON.stringify({
+          MessageID: "abc-123",
+          SubmittedAt: "2026-04-12T12:00:00Z",
+          ErrorCode: 0,
+          Message: "OK",
+        }),
+        { status: 200 }
+      );
+    }) as typeof fetch;
+
+    const result = await sendEmail({
+      to: "client@example.test",
+      subject: "Re: quote",
+      body: "Hi there!",
+      replyTo: "owner-abc123@inbound.example.test",
+    });
+
+    expect(result.messageId).toBe("abc-123");
+    const body = captured.body as Record<string, unknown>;
+    expect(body.ReplyTo).toBe("owner-abc123@inbound.example.test");
+    expect(body.From).toBe("owner@example.test");
+    expect(body.To).toBe("client@example.test");
+    expect(body.Subject).toBe("Re: quote");
+    expect(body.TextBody).toBe("Hi there!");
+  });
+
+  it("omits ReplyTo from the payload when not provided", async () => {
+    process.env.POSTMARK_SERVER_TOKEN = "server-token";
+    process.env.POSTMARK_FROM_EMAIL = "owner@example.test";
+
+    const captured: { body?: unknown } = {};
+    globalThis.fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      captured.body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      return new Response(
+        JSON.stringify({
+          MessageID: "xyz",
+          SubmittedAt: "2026-04-12T12:00:00Z",
+          ErrorCode: 0,
+          Message: "OK",
+        }),
+        { status: 200 }
+      );
+    }) as typeof fetch;
+
+    await sendEmail({
+      to: "client@example.test",
+      subject: "Hello",
+      body: "No reply-to here",
+    });
+
+    const body = captured.body as Record<string, unknown>;
+    expect(body.ReplyTo).toBeUndefined();
+  });
+
+  it("throws when Postmark is not configured", async () => {
+    delete process.env.POSTMARK_SERVER_TOKEN;
+    delete process.env.POSTMARK_FROM_EMAIL;
+    await expect(
+      sendEmail({ to: "a@b.test", subject: "s", body: "b" })
+    ).rejects.toThrow(/not configured/i);
   });
 });
 

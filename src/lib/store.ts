@@ -171,6 +171,21 @@ function migrate(conn: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_followups_user ON followUps(userId);
     CREATE INDEX IF NOT EXISTS idx_followups_status ON followUps(status);
+
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      id                  TEXT PRIMARY KEY,
+      userId              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind                TEXT NOT NULL,
+      model               TEXT NOT NULL,
+      inputTokens         INTEGER NOT NULL DEFAULT 0,
+      outputTokens        INTEGER NOT NULL DEFAULT 0,
+      cachedInputTokens   INTEGER NOT NULL DEFAULT 0,
+      cacheCreationTokens INTEGER NOT NULL DEFAULT 0,
+      estimatedCostUsd    REAL NOT NULL DEFAULT 0,
+      createdAt           TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created
+      ON ai_usage(userId, createdAt);
   `);
 
   // Incremental column adds for existing installs that predate the userId
@@ -180,6 +195,8 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "deals", "userId", "TEXT");
   addColumnIfMissing(conn, "emails", "userId", "TEXT");
   addColumnIfMissing(conn, "followUps", "userId", "TEXT");
+  addColumnIfMissing(conn, "followUps", "sentAt", "TEXT");
+  addColumnIfMissing(conn, "followUps", "sentMessageId", "TEXT");
 
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -415,6 +432,8 @@ interface FollowUpRow {
   status: FollowUp["status"];
   createdAt: string;
   scheduledFor: string | null;
+  sentAt: string | null;
+  sentMessageId: string | null;
 }
 
 function rowToFollowUp(row: FollowUpRow): FollowUp {
@@ -430,6 +449,8 @@ function rowToFollowUp(row: FollowUpRow): FollowUp {
     status: row.status,
     createdAt: row.createdAt,
     scheduledFor: row.scheduledFor ?? undefined,
+    sentAt: row.sentAt ?? undefined,
+    sentMessageId: row.sentMessageId ?? undefined,
   };
 }
 
@@ -503,8 +524,8 @@ function insertEmailRow(conn: Database.Database, e: Email): void {
 function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
   conn
     .prepare(
-      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor)
-       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor)`
+      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor, sentAt, sentMessageId)
+       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor, @sentAt, @sentMessageId)`
     )
     .run({
       id: f.id,
@@ -518,6 +539,8 @@ function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
       status: f.status,
       createdAt: f.createdAt,
       scheduledFor: f.scheduledFor ?? null,
+      sentAt: f.sentAt ?? null,
+      sentMessageId: f.sentMessageId ?? null,
     });
 }
 
@@ -527,23 +550,48 @@ export function createUserRow(input: {
   email: string;
   passwordHash: string;
   name: string;
+  inboundAddress?: string;
 }): User {
   const conn = db();
   const id = newId();
   const nowStr = now();
   conn
     .prepare(
-      `INSERT INTO users (id, email, passwordHash, name, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO users (id, email, passwordHash, name, inboundAddress, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, input.email, input.passwordHash, input.name, nowStr, nowStr);
+    .run(
+      id,
+      input.email,
+      input.passwordHash,
+      input.name,
+      input.inboundAddress ?? null,
+      nowStr,
+      nowStr
+    );
   return {
     id,
     email: input.email,
     name: input.name,
+    inboundAddress: input.inboundAddress,
     createdAt: nowStr,
     updatedAt: nowStr,
   };
+}
+
+export function updateUserInboundAddress(
+  userId: string,
+  inboundAddress: string
+): User | undefined {
+  const conn = db();
+  const nowStr = now();
+  const result = conn
+    .prepare(
+      `UPDATE users SET inboundAddress = ?, updatedAt = ? WHERE id = ?`
+    )
+    .run(inboundAddress, nowStr, userId);
+  if (result.changes === 0) return undefined;
+  return getUserById(userId);
 }
 
 export function getUserById(userId: string): User | undefined {
@@ -1358,6 +1406,11 @@ export function updateFollowUp(
       patch.scheduledFor !== undefined
         ? patch.scheduledFor ?? null
         : existing.scheduledFor,
+    sentAt: patch.sentAt !== undefined ? patch.sentAt ?? null : existing.sentAt,
+    sentMessageId:
+      patch.sentMessageId !== undefined
+        ? patch.sentMessageId ?? null
+        : existing.sentMessageId,
   };
 
   conn
@@ -1370,7 +1423,9 @@ export function updateFollowUp(
          draft = @draft,
          reason = @reason,
          status = @status,
-         scheduledFor = @scheduledFor
+         scheduledFor = @scheduledFor,
+         sentAt = @sentAt,
+         sentMessageId = @sentMessageId
        WHERE id = @id AND userId = @userId`
     )
     .run({
@@ -1384,9 +1439,98 @@ export function updateFollowUp(
       reason: next.reason,
       status: next.status,
       scheduledFor: next.scheduledFor,
+      sentAt: next.sentAt,
+      sentMessageId: next.sentMessageId,
     });
 
   return rowToFollowUp(next);
+}
+
+// ---------- AI usage ----------
+
+export interface AiUsageRow {
+  id: string;
+  userId: string;
+  kind: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  cacheCreationTokens: number;
+  estimatedCostUsd: number;
+  createdAt: string;
+}
+
+export function recordAiUsage(input: {
+  userId: string;
+  kind: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  cacheCreationTokens?: number;
+  estimatedCostUsd: number;
+}): AiUsageRow {
+  const row: AiUsageRow = {
+    id: newId(),
+    userId: input.userId,
+    kind: input.kind,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cachedInputTokens: input.cachedInputTokens ?? 0,
+    cacheCreationTokens: input.cacheCreationTokens ?? 0,
+    estimatedCostUsd: input.estimatedCostUsd,
+    createdAt: now(),
+  };
+  db()
+    .prepare(
+      `INSERT INTO ai_usage
+         (id, userId, kind, model, inputTokens, outputTokens,
+          cachedInputTokens, cacheCreationTokens, estimatedCostUsd, createdAt)
+       VALUES (@id, @userId, @kind, @model, @inputTokens, @outputTokens,
+               @cachedInputTokens, @cacheCreationTokens, @estimatedCostUsd, @createdAt)`
+    )
+    .run(row);
+  return row;
+}
+
+export interface AiUsageSummary {
+  totalCostUsd: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCachedInputTokens: number;
+  totalCacheCreationTokens: number;
+  calls: number;
+}
+
+export function sumAiUsageSince(
+  userId: string,
+  sinceIso: string
+): AiUsageSummary {
+  const row = db()
+    .prepare(
+      `SELECT
+         COALESCE(SUM(estimatedCostUsd), 0)    AS totalCostUsd,
+         COALESCE(SUM(inputTokens), 0)         AS totalInputTokens,
+         COALESCE(SUM(outputTokens), 0)        AS totalOutputTokens,
+         COALESCE(SUM(cachedInputTokens), 0)   AS totalCachedInputTokens,
+         COALESCE(SUM(cacheCreationTokens), 0) AS totalCacheCreationTokens,
+         COUNT(*)                              AS calls
+       FROM ai_usage
+       WHERE userId = ? AND createdAt >= ?`
+    )
+    .get(userId, sinceIso) as AiUsageSummary;
+  return row;
+}
+
+export function listAiUsage(userId: string, limit = 100): AiUsageRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM ai_usage WHERE userId = ?
+       ORDER BY createdAt DESC LIMIT ?`
+    )
+    .all(userId, limit) as AiUsageRow[];
 }
 
 // ---------- Workspace seeding + maintenance ----------

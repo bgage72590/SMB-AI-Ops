@@ -33,7 +33,7 @@ export async function processEmail(
   userId: string,
   email: Email
 ): Promise<PipelineResult> {
-  const triage = await triageEmailSafe(email);
+  const triage = await triageEmailSafe(email, { userId });
 
   // Resolve or create contact.
   let contactId: string | undefined;
@@ -107,6 +107,7 @@ export async function processEmail(
         lastEmail: email,
         category: triage.category,
         schedulingLink,
+        userId,
       });
       const created = createFollowUp(userId, {
         contactId,

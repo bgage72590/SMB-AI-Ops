@@ -7,6 +7,7 @@ import {
   completePasswordReset,
   hashPassword,
   requestPasswordReset,
+  signup,
   verifyPassword,
 } from "./auth";
 import {
@@ -14,8 +15,10 @@ import {
   createSessionRow,
   createUserRow,
   findPasswordResetToken,
+  findUserByInboundAddress,
   getPasswordHashByEmail,
   getSession,
+  getUserById,
 } from "./store";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -25,7 +28,11 @@ import { createHash, randomBytes } from "node:crypto";
 
 let tmpDir: string;
 const savedEnv: Record<string, string | undefined> = {};
-const ENV_OVERRIDES = ["SMB_AI_OPS_DATA_DIR", "APP_BASE_URL"] as const;
+const ENV_OVERRIDES = [
+  "SMB_AI_OPS_DATA_DIR",
+  "APP_BASE_URL",
+  "INBOUND_ADDRESS_DOMAIN",
+] as const;
 
 beforeEach(() => {
   for (const key of ENV_OVERRIDES) savedEnv[key] = process.env[key];
@@ -55,6 +62,52 @@ function makeUser(email = `u-${Date.now()}@example.test`) {
     passwordHash: hashPassword("original-password"),
   });
 }
+
+describe("signup", () => {
+  it("mints a per-user inbound address with the configured domain", () => {
+    process.env.INBOUND_ADDRESS_DOMAIN = "inbound.example.test";
+    const { user } = signup({
+      email: "sarah@shop.test",
+      password: "hunter22!",
+      name: "Sarah Nguyen",
+    });
+    expect(user.inboundAddress).toBeTruthy();
+    expect(user.inboundAddress).toMatch(
+      /^sarah-nguyen-[0-9a-f]{6}@inbound\.example\.test$/
+    );
+    const persisted = getUserById(user.id);
+    expect(persisted?.inboundAddress).toBe(user.inboundAddress);
+    const byAddress = findUserByInboundAddress(user.inboundAddress!);
+    expect(byAddress?.id).toBe(user.id);
+  });
+
+  it("falls back to inbound.local when no domain env var is set", () => {
+    delete process.env.INBOUND_ADDRESS_DOMAIN;
+    const { user } = signup({
+      email: "maya@shop.test",
+      password: "hunter22!",
+      name: "Maya",
+    });
+    expect(user.inboundAddress).toMatch(/@inbound\.local$/);
+  });
+
+  it("gives two users with the same name distinct addresses", () => {
+    process.env.INBOUND_ADDRESS_DOMAIN = "inbound.example.test";
+    const first = signup({
+      email: "sarah1@shop.test",
+      password: "hunter22!",
+      name: "Sarah Nguyen",
+    });
+    const second = signup({
+      email: "sarah2@shop.test",
+      password: "hunter22!",
+      name: "Sarah Nguyen",
+    });
+    expect(first.user.inboundAddress).toBeTruthy();
+    expect(second.user.inboundAddress).toBeTruthy();
+    expect(first.user.inboundAddress).not.toBe(second.user.inboundAddress);
+  });
+});
 
 describe("hashPassword / verifyPassword", () => {
   it("round-trips a password through scrypt", () => {

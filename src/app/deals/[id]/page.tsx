@@ -6,6 +6,13 @@ import {
   StageBadge,
 } from "@/components/Badge";
 import {
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  PageHeader,
+} from "@/components/ui";
+import {
   getContact,
   getDeal,
   listEmailsForDeal,
@@ -67,23 +74,25 @@ export default function JobDetailPage({ params }: Props) {
 
   return (
     <div className="space-y-8">
-      <section>
+      <div>
         <Link
           href="/deals"
           className="text-xs text-fg-subtle hover:text-fg-muted"
         >
           ← All jobs
         </Link>
-        <div className="mt-2 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
+        <PageHeader
+          className="mt-2"
+          eyebrow={
+            <span className="inline-flex items-center gap-2">
               <StageBadge stage={deal.stage} />
-              <h1 className="text-2xl font-semibold text-fg truncate">
-                {deal.title}
-              </h1>
-            </div>
-            {contact && (
-              <div className="mt-2 text-fg-muted">
+              <span>Job</span>
+            </span>
+          }
+          title={deal.title}
+          description={
+            contact ? (
+              <span>
                 <Link
                   href={`/contacts/${contact.id}`}
                   className="hover:text-accent"
@@ -100,48 +109,57 @@ export default function JobDetailPage({ params }: Props) {
                 >
                   {contact.email}
                 </a>
+              </span>
+            ) : undefined
+          }
+          actions={
+            <div className="text-right">
+              <div className="text-2xl font-semibold text-fg tabular-nums">
+                {formatCurrency(deal.amount, deal.currency)}
               </div>
-            )}
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-semibold text-fg">
-              {formatCurrency(deal.amount, deal.currency)}
+              <div className="text-xs text-fg-subtle mt-1">
+                Opened {formatRelative(deal.createdAt)}
+              </div>
             </div>
-            <div className="text-xs text-fg-subtle mt-1">
-              Opened {formatRelative(deal.createdAt)}
-            </div>
-          </div>
-        </div>
-      </section>
+          }
+        />
+      </div>
 
       {deal.nextStep && (
-        <section className="card p-4">
-          <div className="text-xs uppercase tracking-wide text-fg-subtle mb-1">
-            Next step
-          </div>
-          <p className="text-sm text-fg">{deal.nextStep}</p>
-        </section>
+        <Card>
+          <CardBody>
+            <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-semibold mb-1">
+              Next step
+            </div>
+            <p className="text-sm text-fg">{deal.nextStep}</p>
+          </CardBody>
+        </Card>
       )}
 
-      <section>
-        <h2 className="text-sm uppercase tracking-wide text-fg-subtle mb-3">
-          Activity
-        </h2>
-        {timeline.length === 0 ? (
-          <div className="card p-6 text-center text-sm text-fg-subtle">
-            No activity yet.
-          </div>
-        ) : (
-          <ol className="relative border-l border-border ml-2 space-y-4">
-            {timeline.map((entry, idx) => (
-              <li key={idx} className="ml-4">
-                <span className="absolute -left-1.5 mt-2 h-3 w-3 rounded-full bg-accent ring-4 ring-bg" />
-                <TimelineRow entry={entry} />
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <Card>
+        <CardHeader
+          title="Activity"
+          subtitle={`${timeline.length} event${timeline.length === 1 ? "" : "s"}`}
+        />
+        <CardBody>
+          {timeline.length === 0 ? (
+            <EmptyState
+              icon="📭"
+              title="No activity yet"
+              description="Emails, follow-ups, and stage changes will show up here as the job moves through your pipeline."
+            />
+          ) : (
+            <ol className="relative border-l border-border ml-2 space-y-4">
+              {timeline.map((entry, idx) => (
+                <li key={idx} className="ml-4">
+                  <span className="absolute -left-1.5 mt-2 h-3 w-3 rounded-full bg-accent ring-4 ring-bg" />
+                  <TimelineRow entry={entry} />
+                </li>
+              ))}
+            </ol>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 }
@@ -149,7 +167,7 @@ export default function JobDetailPage({ params }: Props) {
 function TimelineRow({ entry }: { entry: TimelineEntry }) {
   if (entry.kind === "stage") {
     return (
-      <div className="card p-3">
+      <div className="rounded-lg border border-border bg-surface-2/60 p-3">
         <div className="text-xs text-fg-subtle">
           {formatRelative(entry.at)}
         </div>
@@ -160,7 +178,7 @@ function TimelineRow({ entry }: { entry: TimelineEntry }) {
   if (entry.kind === "email") {
     const email = entry.email;
     return (
-      <div className="card p-4">
+      <div className="rounded-lg border border-border bg-surface-2/60 p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -193,7 +211,7 @@ function TimelineRow({ entry }: { entry: TimelineEntry }) {
   }
   const followUp = entry.followUp;
   return (
-    <div className="card p-4">
+    <div className="rounded-lg border border-border bg-surface-2/60 p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

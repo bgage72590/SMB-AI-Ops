@@ -15,6 +15,7 @@ import {
   deleteSession,
   deleteSessionsForUser,
   findPasswordResetToken,
+  findUserByInboundAddress,
   getPasswordHashByEmail,
   getSession,
   getUserByEmail,
@@ -78,8 +79,9 @@ export interface AuthResult {
 }
 
 /**
- * Creates a new user, populates their workspace with sample data, and
- * issues a fresh session. Throws on duplicate email or weak password.
+ * Creates a new user, mints their dedicated inbound email address,
+ * populates their workspace with sample data, and issues a fresh session.
+ * Throws on duplicate email or weak password.
  */
 export function signup(input: SignupInput): AuthResult {
   const email = input.email.trim().toLowerCase();
@@ -88,15 +90,53 @@ export function signup(input: SignupInput): AuthResult {
   if (input.password.length < 8) throw new AuthError("weak_password");
   if (getUserByEmail(email)) throw new AuthError("email_taken");
 
+  const inboundAddress = mintInboundAddress(name);
   const user = createUserRow({
     email,
     name,
     passwordHash: hashPassword(input.password),
+    inboundAddress,
   });
   seedWorkspace(user.id);
 
   const session = issueSession(user.id);
   return { user, sessionId: session.id, expiresAt: session.expiresAt };
+}
+
+/**
+ * Generate a unique inbound email address for a new workspace. The local
+ * part is a slug derived from the owner's name plus a short random suffix
+ * so two "Sarah Nguyen"s don't collide. The domain comes from
+ * `INBOUND_ADDRESS_DOMAIN` (e.g. `inbound.smbaiops.com`); in dev we fall
+ * back to `inbound.local` so signup still works with zero config.
+ *
+ * We retry on the rare collision against an existing inboundAddress row.
+ * After 5 retries we bail to an opaque `u-<8hex>@domain` form.
+ */
+function mintInboundAddress(ownerName: string): string {
+  const domain =
+    process.env.INBOUND_ADDRESS_DOMAIN?.trim().replace(/^@/, "") ||
+    "inbound.local";
+  const slug = slugify(ownerName) || "inbox";
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const suffix = randomBytes(3).toString("hex");
+    const candidate = `${slug}-${suffix}@${domain}`;
+    if (!findUserByInboundAddress(candidate)) {
+      return candidate;
+    }
+  }
+  return `u-${randomBytes(4).toString("hex")}@${domain}`;
+}
+
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
 }
 
 export interface LoginInput {
