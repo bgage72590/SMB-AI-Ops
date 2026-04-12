@@ -5,6 +5,8 @@
 // Set SLACK_WEBHOOK_URL to enable outbound notifications.
 // Set SLACK_SIGNING_SECRET to verify inbound event payloads.
 
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 export interface SlackMessage {
   text: string;
   channel?: string;
@@ -151,14 +153,12 @@ export function verifySlackSignature(
   const fiveMinAgo = Math.floor(Date.now() / 1000) - 60 * 5;
   if (parseInt(timestamp, 10) < fiveMinAgo) return false;
 
-  const { createHmac } = require("node:crypto");
   const sigBaseString = `v0:${timestamp}:${body}`;
   const hmac = createHmac("sha256", secret)
     .update(sigBaseString)
     .digest("hex");
   const expected = `v0=${hmac}`;
 
-  const { timingSafeEqual } = require("node:crypto");
   try {
     return timingSafeEqual(
       Buffer.from(signature),
