@@ -206,6 +206,45 @@ export default function DashboardPage() {
         </div>
       </Card>
 
+      {/* Quick actions */}
+      <section className="flex items-center gap-3 flex-wrap">
+        <Link
+          href="/inbox"
+          className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium rounded-lg border border-border bg-surface text-fg hover:bg-surface-2 transition-colors"
+        >
+          <span className="text-base leading-none">&#9993;</span>
+          Open inbox
+        </Link>
+        <Link
+          href="/deals"
+          className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium rounded-lg border border-border bg-surface text-fg hover:bg-surface-2 transition-colors"
+        >
+          <span className="text-base leading-none">&#9776;</span>
+          View pipeline
+        </Link>
+        <Link
+          href="/contacts"
+          className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium rounded-lg border border-border bg-surface text-fg hover:bg-surface-2 transition-colors"
+        >
+          <span className="text-base leading-none">&#128101;</span>
+          Clients
+        </Link>
+        <Link
+          href="/reports"
+          className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium rounded-lg border border-border bg-surface text-fg hover:bg-surface-2 transition-colors"
+        >
+          <span className="text-base leading-none">&#128200;</span>
+          Reports
+        </Link>
+        <Link
+          href="/settings"
+          className="inline-flex items-center gap-2 h-9 px-4 text-sm font-medium rounded-lg border border-border bg-surface text-fg hover:bg-surface-2 transition-colors"
+        >
+          <span className="text-base leading-none">&#9881;</span>
+          Settings
+        </Link>
+      </section>
+
       {/* At-a-glance stats. */}
       <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard

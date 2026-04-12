@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { CommandPalette } from "@/components/CommandPalette";
+import { KeyboardHelp } from "@/components/KeyboardHelp";
 import { Nav } from "@/components/Nav";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/components/ThemeProvider";
 import { ToastProvider } from "@/components/Toast";
@@ -35,6 +36,7 @@ export default function RootLayout({
               />
               <main id="main-content" className="max-w-6xl mx-auto px-4 py-8">{children}</main>
               <CommandPalette enabled={Boolean(user)} />
+              <KeyboardHelp enabled={Boolean(user)} />
             </div>
           </ToastProvider>
         </ThemeProvider>
