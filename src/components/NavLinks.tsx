@@ -4,12 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 
-const LINKS: Array<{ href: string; label: string }> = [
+interface NavBadges {
+  inbox?: number;
+  followups?: number;
+}
+
+const LINKS: Array<{ href: string; label: string; badgeKey?: keyof NavBadges }> = [
   { href: "/", label: "Dashboard" },
-  { href: "/inbox", label: "Inbox" },
+  { href: "/inbox", label: "Inbox", badgeKey: "inbox" },
   { href: "/deals", label: "Jobs" },
   { href: "/contacts", label: "Clients" },
-  { href: "/followups", label: "Follow-ups" },
+  { href: "/followups", label: "Follow-ups", badgeKey: "followups" },
   { href: "/reports", label: "Reports" },
 ];
 
@@ -18,13 +23,23 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-export function NavLinks() {
+function Badge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-danger text-white leading-none">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+export function NavLinks({ badges }: { badges?: NavBadges }) {
   const pathname = usePathname();
 
   return (
     <nav className="hidden md:flex items-center gap-1 text-sm">
       {LINKS.map((link) => {
         const active = isActive(pathname, link.href);
+        const badgeCount = link.badgeKey && badges ? badges[link.badgeKey] ?? 0 : 0;
         return (
           <Link
             key={link.href}
@@ -37,6 +52,7 @@ export function NavLinks() {
             aria-current={active ? "page" : undefined}
           >
             {link.label}
+            <Badge count={badgeCount} />
           </Link>
         );
       })}
@@ -44,10 +60,12 @@ export function NavLinks() {
   );
 }
 
-export function MobileMenu() {
+export function MobileMenu({ badges }: { badges?: NavBadges }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const totalBadge = (badges?.inbox ?? 0) + (badges?.followups ?? 0);
 
   // Close on route change
   useEffect(() => {
@@ -81,7 +99,7 @@ export function MobileMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="p-2 rounded-md text-fg-muted hover:text-fg hover:bg-surface-2"
+        className="relative p-2 rounded-md text-fg-muted hover:text-fg hover:bg-surface-2"
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
       >
@@ -94,24 +112,31 @@ export function MobileMenu() {
             <path d="M3 5h14M3 10h14M3 15h14" />
           </svg>
         )}
+        {!open && totalBadge > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[9px] font-bold text-white">
+            {totalBadge > 9 ? "9+" : totalBadge}
+          </span>
+        )}
       </button>
 
       {open && (
         <nav className="absolute right-0 top-full mt-2 w-48 py-2 rounded-xl bg-surface border border-border shadow-[var(--shadow-pop)] z-50">
           {LINKS.map((link) => {
             const active = isActive(pathname, link.href);
+            const badgeCount = link.badgeKey && badges ? badges[link.badgeKey] ?? 0 : 0;
             return (
               <Link
                 key={link.href}
                 href={link.href}
                 className={
                   active
-                    ? "block px-4 py-2.5 text-sm font-medium text-accent bg-accent-soft"
-                    : "block px-4 py-2.5 text-sm text-fg-muted hover:text-fg hover:bg-surface-2"
+                    ? "flex items-center justify-between px-4 py-2.5 text-sm font-medium text-accent bg-accent-soft"
+                    : "flex items-center justify-between px-4 py-2.5 text-sm text-fg-muted hover:text-fg hover:bg-surface-2"
                 }
                 aria-current={active ? "page" : undefined}
               >
                 {link.label}
+                <Badge count={badgeCount} />
               </Link>
             );
           })}

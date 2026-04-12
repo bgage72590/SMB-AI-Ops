@@ -55,6 +55,17 @@ export default function ClientsPage({
         eyebrow="CRM"
         title="Clients"
         description={`${allContacts.length} in your book \u00b7 ${withOpenJob} with an open job`}
+        actions={
+          allContacts.length > 0 ? (
+            <a
+              href="/api/export?type=contacts"
+              download
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-border bg-surface text-fg-muted hover:bg-surface-2 transition-colors"
+            >
+              Export CSV
+            </a>
+          ) : undefined
+        }
       />
 
       <Suspense>
