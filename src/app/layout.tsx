@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardHelp } from "@/components/KeyboardHelp";
-import { Footer } from "@/components/Footer";
-import { Nav } from "@/components/Nav";
+import { Sidebar } from "@/components/Sidebar";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/components/ThemeProvider";
 import { ToastProvider } from "@/components/Toast";
 import { getCurrentUser } from "@/lib/auth";
 import { listEmails, listFollowUps } from "@/lib/store";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "SMB AI Ops — AI Office Manager",
@@ -37,22 +37,61 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        {/* Runs synchronously before React hydrates so dark mode doesn't flash. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
         <ThemeProvider>
           <ToastProvider>
-            <div className="min-h-screen bg-bg text-fg flex flex-col">
-              <Nav
-                user={user ? { name: user.name, email: user.email } : null}
-                badges={badges}
-              />
-              <main id="main-content" className="max-w-6xl mx-auto px-4 py-8 flex-1 w-full">{children}</main>
-              {user && <Footer />}
-              <CommandPalette enabled={Boolean(user)} />
-              <KeyboardHelp enabled={Boolean(user)} />
-            </div>
+            {user ? (
+              <div className="flex h-screen bg-bg text-fg">
+                <Sidebar
+                  user={{ name: user.name, email: user.email }}
+                  badges={badges}
+                />
+                <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+                  <main
+                    id="main-content"
+                    className="flex-1 overflow-y-auto"
+                  >
+                    <div className="max-w-6xl px-6 py-6 lg:px-8 lg:py-8">
+                      {children}
+                    </div>
+                  </main>
+                </div>
+              </div>
+            ) : (
+              <div className="min-h-screen bg-bg text-fg flex flex-col">
+                <header className="border-b border-border bg-surface/80 backdrop-blur-sm">
+                  <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
+                    <Link href="/" className="flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent text-accent-fg text-xs font-bold">
+                        AI
+                      </span>
+                      <span className="font-semibold text-sm text-fg">SMB AI Ops</span>
+                    </Link>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Link
+                        href="/login"
+                        className="px-3 py-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-surface-2 transition-colors"
+                      >
+                        Sign in
+                      </Link>
+                      <Link
+                        href="/signup"
+                        className="px-3 py-1.5 rounded-md bg-accent text-accent-fg hover:opacity-90 transition-opacity"
+                      >
+                        Sign up
+                      </Link>
+                    </div>
+                  </div>
+                </header>
+                <main id="main-content" className="flex-1 w-full max-w-md mx-auto px-4 py-8">
+                  {children}
+                </main>
+              </div>
+            )}
+            <CommandPalette enabled={Boolean(user)} />
+            <KeyboardHelp enabled={Boolean(user)} />
           </ToastProvider>
         </ThemeProvider>
       </body>
