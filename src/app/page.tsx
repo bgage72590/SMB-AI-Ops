@@ -29,6 +29,8 @@ import { isAIConfigured } from "@/lib/ai";
 import { checkAiBudget } from "@/lib/aiUsage";
 import { isPostmarkConfigured } from "@/lib/postmark";
 import { requireUser } from "@/lib/auth";
+import { checkTrial } from "@/lib/trial";
+import { TrialBanner } from "@/components/TrialBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,7 @@ export default function DashboardPage() {
   const contacts = listContacts(user.id);
   const followUps = listFollowUps(user.id);
   const canSend = isPostmarkConfigured();
+  const trial = checkTrial(user);
 
   const unprocessed = emails.filter((e) => !e.processed);
   const openDeals = deals.filter(
@@ -101,6 +104,8 @@ export default function DashboardPage() {
         actions={<ProcessButton />}
       />
 
+      <TrialBanner trial={trial} />
+
       {!isAIConfigured() && (
         <Card className="p-4 border-warning/40 bg-warning-soft">
           <p className="text-sm text-fg">
@@ -113,7 +118,17 @@ export default function DashboardPage() {
       )}
 
       {user.inboundAddress && (
-        <InboundAddressCard address={user.inboundAddress} />
+        <div className="space-y-2">
+          <InboundAddressCard address={user.inboundAddress} />
+          {emails.filter((e) => e.processed).length === 0 && (
+            <Link
+              href="/onboarding"
+              className="block text-center text-xs text-accent hover:underline"
+            >
+              Need help setting up Gmail forwarding? Follow the setup guide
+            </Link>
+          )}
+        </div>
       )}
 
       {aiBudget.budgetUsd > 0 && aiBudget.exceeded && (

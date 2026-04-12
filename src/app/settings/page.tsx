@@ -5,6 +5,7 @@ import { PLANS, isStripeConfigured } from "@/lib/stripe";
 import { checkUsageLimits } from "@/lib/plans";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { BillingActions } from "@/components/BillingActions";
+import { InboundAddressCard } from "@/components/InboundAddressCard";
 
 export default function SettingsPage() {
   let user;
@@ -27,6 +28,11 @@ export default function SettingsPage() {
         title="Settings"
         description="Manage your account and billing"
       />
+
+      {/* Inbound address */}
+      {fresh.inboundAddress && (
+        <InboundAddressCard address={fresh.inboundAddress} />
+      )}
 
       {/* Current plan */}
       <Card>

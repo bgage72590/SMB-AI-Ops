@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getContact, getFollowUp, updateFollowUp } from "@/lib/store";
 import { isPostmarkConfigured, sendEmail } from "@/lib/postmark";
 import { AuthError, requireUserForApi } from "@/lib/auth";
+import { trialGuardResponse } from "@/lib/trialGuard";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
     }
     throw err;
   }
+
+  const blocked = trialGuardResponse(user);
+  if (blocked) return blocked;
 
   const payload = await request.json().catch(() => null);
   const parsed = SendSchema.safeParse(payload);

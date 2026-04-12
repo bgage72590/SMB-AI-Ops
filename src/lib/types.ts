@@ -34,6 +34,8 @@ export interface User {
   stripePriceId?: string;
   subscriptionStatus?: SubscriptionStatus;
   planTier: PlanTier;
+  /** ISO timestamp when the free trial expires. null = no trial (paid). */
+  trialEndsAt?: string;
   createdAt: string;
   updatedAt: string;
 }

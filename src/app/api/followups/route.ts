@@ -9,6 +9,7 @@ import {
 } from "@/lib/store";
 import { draftFollowUp } from "@/lib/ai";
 import { AuthError, requireUserForApi } from "@/lib/auth";
+import { trialGuardResponse } from "@/lib/trialGuard";
 
 export const runtime = "nodejs";
 
@@ -47,6 +48,9 @@ export async function POST(request: Request) {
     }
     throw err;
   }
+
+  const postBlocked = trialGuardResponse(user);
+  if (postBlocked) return postBlocked;
 
   const payload = await request.json().catch(() => null);
   const parsed = CreateSchema.safeParse(payload);
@@ -95,6 +99,9 @@ export async function PATCH(request: Request) {
     }
     throw err;
   }
+
+  const patchBlocked = trialGuardResponse(user);
+  if (patchBlocked) return patchBlocked;
 
   const payload = await request.json().catch(() => null);
   const parsed = UpdateSchema.safeParse(payload);

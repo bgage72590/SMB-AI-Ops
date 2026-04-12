@@ -3,6 +3,7 @@ import { processAllUnprocessed, processEmail } from "@/lib/pipeline";
 import { getEmail } from "@/lib/store";
 import { enqueueUnprocessedEmails } from "@/lib/jobs";
 import { AuthError, requireUserForApi } from "@/lib/auth";
+import { trialGuardResponse } from "@/lib/trialGuard";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,9 @@ export async function POST(request: Request) {
     }
     throw err;
   }
+
+  const blocked = trialGuardResponse(user);
+  if (blocked) return blocked;
 
   let emailId: string | undefined;
   try {
