@@ -9,8 +9,10 @@ import type {
   EmailCategory,
   EmailPriority,
   FollowUp,
+  PlanTier,
   Session,
   StoreShape,
+  SubscriptionStatus,
   User,
 } from "./types";
 import { LEGACY_STAGE_MAP } from "./types";
@@ -201,6 +203,11 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "deals", "costLabor", "REAL DEFAULT 0");
   addColumnIfMissing(conn, "users", "aiWeeklyBudgetUsd", "REAL DEFAULT 0");
   addColumnIfMissing(conn, "followUps", "icsData", "TEXT");
+  addColumnIfMissing(conn, "users", "stripeCustomerId", "TEXT");
+  addColumnIfMissing(conn, "users", "stripeSubscriptionId", "TEXT");
+  addColumnIfMissing(conn, "users", "stripePriceId", "TEXT");
+  addColumnIfMissing(conn, "users", "subscriptionStatus", "TEXT");
+  addColumnIfMissing(conn, "users", "planTier", "TEXT DEFAULT 'free'");
 
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -305,6 +312,11 @@ interface UserRow {
   name: string;
   inboundAddress: string | null;
   aiWeeklyBudgetUsd: number;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+  subscriptionStatus: string | null;
+  planTier: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -316,6 +328,11 @@ function rowToUser(row: UserRow): User {
     name: row.name,
     inboundAddress: row.inboundAddress ?? undefined,
     aiWeeklyBudgetUsd: row.aiWeeklyBudgetUsd ?? 0,
+    stripeCustomerId: row.stripeCustomerId ?? undefined,
+    stripeSubscriptionId: row.stripeSubscriptionId ?? undefined,
+    stripePriceId: row.stripePriceId ?? undefined,
+    subscriptionStatus: (row.subscriptionStatus as SubscriptionStatus) ?? undefined,
+    planTier: (row.planTier as PlanTier) ?? "free",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -590,6 +607,7 @@ export function createUserRow(input: {
     name: input.name,
     inboundAddress: input.inboundAddress,
     aiWeeklyBudgetUsd: 0,
+    planTier: "free" as const,
     createdAt: nowStr,
     updatedAt: nowStr,
   };
@@ -622,6 +640,53 @@ export function updateUserAiBudget(
     .run(budgetUsd, now(), userId);
   if (result.changes === 0) return undefined;
   return getUserById(userId);
+}
+
+export function updateUserStripe(
+  userId: string,
+  fields: {
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string | null;
+    stripePriceId?: string | null;
+    subscriptionStatus?: string | null;
+    planTier?: PlanTier;
+  }
+): User | undefined {
+  const conn = db();
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (fields.stripeCustomerId !== undefined) {
+    sets.push("stripeCustomerId = ?");
+    vals.push(fields.stripeCustomerId);
+  }
+  if (fields.stripeSubscriptionId !== undefined) {
+    sets.push("stripeSubscriptionId = ?");
+    vals.push(fields.stripeSubscriptionId);
+  }
+  if (fields.stripePriceId !== undefined) {
+    sets.push("stripePriceId = ?");
+    vals.push(fields.stripePriceId);
+  }
+  if (fields.subscriptionStatus !== undefined) {
+    sets.push("subscriptionStatus = ?");
+    vals.push(fields.subscriptionStatus);
+  }
+  if (fields.planTier !== undefined) {
+    sets.push("planTier = ?");
+    vals.push(fields.planTier);
+  }
+  vals.push(userId);
+  conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getUserById(userId);
+}
+
+export function getUserByStripeCustomerId(
+  stripeCustomerId: string
+): User | undefined {
+  const row = db()
+    .prepare("SELECT * FROM users WHERE stripeCustomerId = ?")
+    .get(stripeCustomerId) as UserRow | undefined;
+  return row ? rowToUser(row) : undefined;
 }
 
 export function getUserById(userId: string): User | undefined {

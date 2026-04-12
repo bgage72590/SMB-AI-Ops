@@ -4,6 +4,16 @@
 // map them 1:1 onto SQLite rows. Every user-owned row carries a `userId`
 // foreign key so everything can be scoped to a single workspace.
 
+export type SubscriptionStatus =
+  | "active"
+  | "trialing"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "incomplete";
+
+export type PlanTier = "free" | "starter" | "pro";
+
 export interface User {
   id: string;
   email: string;
@@ -19,6 +29,11 @@ export interface User {
    * the platform falls back to heuristic mode. 0 = unlimited.
    */
   aiWeeklyBudgetUsd: number;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripePriceId?: string;
+  subscriptionStatus?: SubscriptionStatus;
+  planTier: PlanTier;
   createdAt: string;
   updatedAt: string;
 }

@@ -6,6 +6,7 @@ import {
   getContact,
   getDeal,
   getEmail,
+  getUserById,
   listEmails,
   updateDeal,
   updateEmail,
@@ -13,6 +14,7 @@ import {
 } from "./store";
 import { draftFollowUp, triageEmailSafe } from "./ai";
 import { generateIcs, parseSchedulingTime } from "./ical";
+import { checkUsageLimits } from "./plans";
 import type { Email } from "./types";
 
 // The "brain" that turns a raw email into CRM side-effects. Every route
@@ -34,6 +36,23 @@ export async function processEmail(
   userId: string,
   email: Email
 ): Promise<PipelineResult> {
+  const owner = getUserById(userId);
+  if (owner) {
+    const limits = checkUsageLimits(owner);
+    if (limits.overLimit) {
+      console.warn(
+        `User ${userId} over email limit (${limits.emailsUsed}/${limits.emailsLimit}), skipping AI pipeline`
+      );
+      updateEmail(userId, email.id, { processed: true });
+      return {
+        emailId: email.id,
+        category: "other",
+        priority: "normal",
+        summary: "Plan email limit reached — upgrade to process more emails.",
+      };
+    }
+  }
+
   const triage = await triageEmailSafe(email, { userId });
 
   // Resolve or create contact.
