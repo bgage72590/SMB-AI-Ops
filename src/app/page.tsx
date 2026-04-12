@@ -31,6 +31,7 @@ import { isPostmarkConfigured } from "@/lib/postmark";
 import { requireUser } from "@/lib/auth";
 import { checkTrial } from "@/lib/trial";
 import { TrialBanner } from "@/components/TrialBanner";
+import { AskBox } from "@/components/AskBox";
 
 export const dynamic = "force-dynamic";
 
@@ -355,6 +356,17 @@ export default function DashboardPage() {
           </CardBody>
         </Card>
       </section>
+
+      {/* Ask the AI anything. */}
+      <Card>
+        <CardHeader
+          title="Ask your AI office manager"
+          subtitle="Get advice, draft emails, or check pipeline health"
+        />
+        <CardBody>
+          <AskBox />
+        </CardBody>
+      </Card>
 
       {/* Top open jobs. */}
       <Card>

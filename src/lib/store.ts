@@ -263,6 +263,37 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "googleCalendarEnabled", "INTEGER DEFAULT 0");
   addColumnIfMissing(conn, "users", "workspaceId", "TEXT");
 
+  conn.exec(`
+    CREATE TABLE IF NOT EXISTS enrichment_cache (
+      email      TEXT PRIMARY KEY COLLATE NOCASE,
+      data       TEXT NOT NULL,
+      createdAt  TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_field_schemas (
+      id         TEXT PRIMARY KEY,
+      userId     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entityType TEXT NOT NULL,
+      schema     TEXT NOT NULL,
+      updatedAt  TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cfs_user_entity
+      ON custom_field_schemas(userId, entityType);
+
+    CREATE TABLE IF NOT EXISTS custom_field_values (
+      id         TEXT PRIMARY KEY,
+      userId     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entityType TEXT NOT NULL,
+      entityId   TEXT NOT NULL,
+      data       TEXT NOT NULL,
+      updatedAt  TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cfv_user_entity
+      ON custom_field_values(userId, entityType, entityId);
+    CREATE INDEX IF NOT EXISTS idx_cfv_entity
+      ON custom_field_values(entityType, entityId);
+  `);
+
   provisionWorkspaces(conn);
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -1898,6 +1929,8 @@ export function deleteUserData(userId: string): number {
   const conn = db();
   let tables = 0;
   const ops = [
+    "DELETE FROM custom_field_values WHERE userId = ?",
+    "DELETE FROM custom_field_schemas WHERE userId = ?",
     "DELETE FROM audit_log WHERE userId = ?",
     "DELETE FROM ai_usage WHERE userId = ?",
     "DELETE FROM sender_blocklist WHERE userId = ?",
@@ -2074,4 +2107,149 @@ export function listAuditLog(
       "SELECT * FROM audit_log WHERE userId = ? ORDER BY createdAt DESC LIMIT ?"
     )
     .all(userId, limit) as AuditEntry[];
+}
+
+// ---------- Contact updates ----------
+
+export function updateContact(
+  userId: string,
+  contactId: string,
+  patch: Partial<Omit<Contact, "id" | "userId" | "createdAt">>
+): Contact | undefined {
+  const conn = db();
+  const existing = conn
+    .prepare("SELECT * FROM contacts WHERE id = ? AND userId = ?")
+    .get(contactId, userId) as ContactRow | undefined;
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (patch.name !== undefined) {
+    sets.push("name = ?");
+    vals.push(patch.name);
+  }
+  if (patch.email !== undefined) {
+    sets.push("email = ?");
+    vals.push(patch.email);
+  }
+  if (patch.company !== undefined) {
+    sets.push("company = ?");
+    vals.push(patch.company);
+  }
+  if (patch.phone !== undefined) {
+    sets.push("phone = ?");
+    vals.push(patch.phone);
+  }
+  if (patch.notes !== undefined) {
+    sets.push("notes = ?");
+    vals.push(patch.notes);
+  }
+  vals.push(contactId, userId);
+  conn.prepare(`UPDATE contacts SET ${sets.join(", ")} WHERE id = ? AND userId = ?`).run(...vals);
+  return getContact(userId, contactId);
+}
+
+// ---------- Enrichment cache ----------
+
+export function getEnrichmentCache(email: string): Record<string, unknown> | null {
+  const row = db()
+    .prepare("SELECT data FROM enrichment_cache WHERE email = ?")
+    .get(email.toLowerCase().trim()) as { data: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.data);
+  } catch {
+    return null;
+  }
+}
+
+export function setEnrichmentCache(
+  email: string,
+  data: Record<string, unknown>
+): void {
+  db()
+    .prepare(
+      `INSERT OR REPLACE INTO enrichment_cache (email, data, createdAt)
+       VALUES (?, ?, ?)`
+    )
+    .run(email.toLowerCase().trim(), JSON.stringify(data), now());
+}
+
+// ---------- Custom fields ----------
+
+export interface CustomFieldDef {
+  key: string;
+  label: string;
+  type: "text" | "number" | "date" | "select";
+  options?: string[];
+}
+
+export function getCustomFieldSchema(
+  userId: string,
+  entityType: string
+): CustomFieldDef[] {
+  const row = db()
+    .prepare(
+      "SELECT schema FROM custom_field_schemas WHERE userId = ? AND entityType = ?"
+    )
+    .get(userId, entityType) as { schema: string } | undefined;
+  if (!row) return [];
+  try {
+    return JSON.parse(row.schema);
+  } catch {
+    return [];
+  }
+}
+
+export function setCustomFieldSchema(
+  userId: string,
+  entityType: string,
+  schema: CustomFieldDef[]
+): void {
+  db()
+    .prepare(
+      `INSERT INTO custom_field_schemas (id, userId, entityType, schema, updatedAt)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(userId, entityType) DO UPDATE SET
+         schema = excluded.schema,
+         updatedAt = excluded.updatedAt`
+    )
+    .run(newId(), userId, entityType, JSON.stringify(schema), now());
+}
+
+export function getCustomFields(
+  userId: string,
+  entityType: string,
+  entityId: string
+): Record<string, unknown> {
+  const row = db()
+    .prepare(
+      "SELECT data FROM custom_field_values WHERE userId = ? AND entityType = ? AND entityId = ?"
+    )
+    .get(userId, entityType, entityId) as { data: string } | undefined;
+  if (!row) return {};
+  try {
+    return JSON.parse(row.data);
+  } catch {
+    return {};
+  }
+}
+
+export function setCustomFields(
+  userId: string,
+  entityType: string,
+  entityId: string,
+  fields: Record<string, unknown>
+): void {
+  const existing = getCustomFields(userId, entityType, entityId);
+  const merged = { ...existing, ...fields };
+  db()
+    .prepare(
+      `INSERT INTO custom_field_values (id, userId, entityType, entityId, data, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId, entityType, entityId) DO UPDATE SET
+         data = excluded.data,
+         updatedAt = excluded.updatedAt`
+    )
+    .run(newId(), userId, entityType, entityId, JSON.stringify(merged), now());
 }
