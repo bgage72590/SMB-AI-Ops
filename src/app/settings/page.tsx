@@ -149,6 +149,15 @@ export default function SettingsPage() {
                 Invite a second owner to your workspace
               </p>
             </Link>
+            <Link
+              href="/settings/domain"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Domain</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Verify SPF, DKIM &amp; DMARC for deliverability
+              </p>
+            </Link>
           </nav>
         </CardBody>
       </Card>

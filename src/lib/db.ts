@@ -6,7 +6,18 @@ import Database from "better-sqlite3";
 // rewrite when we move off SQLite. Everything else in the app treats
 // `getConnection()` as an opaque handle passed into `src/lib/store.ts`.
 //
-// See docs/postgres-migration.md for the full swap plan.
+// When DATABASE_URL is set, the Postgres backend is available. The actual
+// swap happens in db-postgres.ts — this file stays SQLite-only so we can
+// run both side by side during the transition. See docs/postgres-migration.md.
+
+/**
+ * True when DATABASE_URL is set and the app should use Postgres.
+ * During the migration window we read from SQLite and dual-write to
+ * Postgres; once validated, flip this to skip SQLite entirely.
+ */
+export function isPostgresEnabled(): boolean {
+  return process.env.DB_BACKEND === "postgres" && Boolean(process.env.DATABASE_URL);
+}
 
 /**
  * Resolve the directory where the SQLite DB lives. Reads

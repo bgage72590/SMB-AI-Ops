@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, SESSION_COOKIE, signup } from "@/lib/auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,15 @@ const SignupSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const limit = checkRateLimit(`signup:${ip}`, 5, 15 * 60 * 1000);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited", retryAfterMs: limit.retryAfterMs },
+      { status: 429 }
+    );
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = SignupSchema.safeParse(payload);
   if (!parsed.success) {

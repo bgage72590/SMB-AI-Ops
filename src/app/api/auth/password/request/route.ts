@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requestPasswordReset } from "@/lib/auth";
 import { isPostmarkConfigured, sendEmail } from "@/lib/postmark";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,12 @@ const RequestSchema = z.object({ email: z.string().email() });
  * the developer can still walk the flow locally.
  */
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const limit = checkRateLimit(`pw-reset:${ip}`, 5, 15 * 60 * 1000);
+  if (!limit.allowed) {
+    return NextResponse.json({ ok: true });
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = RequestSchema.safeParse(payload);
   if (!parsed.success) {
