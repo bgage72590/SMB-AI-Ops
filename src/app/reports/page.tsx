@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { generatePipelineReport } from "@/lib/reports";
 import { formatCurrency } from "@/lib/format";
 import { StageBadge } from "@/components/Badge";
+import { listDeals } from "@/lib/store";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -12,6 +13,29 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+function getMonthlyRevenue(deals: ReturnType<typeof listDeals>) {
+  const months: Record<string, number> = {};
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    months[key] = 0;
+  }
+  for (const deal of deals) {
+    if (deal.stage !== "completed") continue;
+    const d = new Date(deal.updatedAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (key in months) months[key] += deal.amount;
+  }
+  return Object.entries(months).map(([month, value]) => ({ month, value }));
+}
+
+function getMonthLabel(ym: string) {
+  const [y, m] = ym.split("-");
+  const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return labels[parseInt(m, 10) - 1] + " " + y.slice(2);
+}
 
 export default function ReportsPage() {
   let user;
@@ -23,6 +47,14 @@ export default function ReportsPage() {
 
   const report = generatePipelineReport(user.id);
   const wr = report.winRate;
+  const deals = listDeals(user.id);
+  const monthlyRevenue = getMonthlyRevenue(deals);
+  const maxMonthly = Math.max(...monthlyRevenue.map((m) => m.value), 1);
+
+  const openStages = report.stageBreakdown.filter(
+    (b) => !["completed", "lost"].includes(b.stage) && b.count > 0
+  );
+  const maxStageValue = Math.max(...openStages.map((b) => b.totalValue), 1);
 
   return (
     <div className="space-y-6">
@@ -60,14 +92,151 @@ export default function ReportsPage() {
         </div>
       </section>
 
-      {/* Secondary stats — compact inline row */}
+      {/* Secondary stats */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-fg-muted px-1">
         <span>Deals closed (90d): <strong className="text-fg">{wr.totalClosed}</strong></span>
         <span>At-risk: <strong className="text-fg">{report.atRisk.length}</strong> stale &gt;7d</span>
         <span>Open stages: <strong className="text-fg">{report.stageBreakdown.filter(b => b.count > 0).length}</strong></span>
       </div>
 
-      {/* Pipeline by stage */}
+      {/* Two-column: Charts */}
+      <section className="grid lg:grid-cols-2 gap-6">
+        {/* Pipeline funnel */}
+        <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-fg">Pipeline funnel</h2>
+            <span className="text-xs text-fg-subtle">{openStages.reduce((s, b) => s + b.count, 0)} open jobs</span>
+          </div>
+          {openStages.length === 0 ? (
+            <div className="text-sm text-fg-subtle py-6 text-center">No open jobs in pipeline</div>
+          ) : (
+            <div className="space-y-3">
+              {openStages.map((b) => {
+                const pct = (b.totalValue / maxStageValue) * 100;
+                return (
+                  <div key={b.stage}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <StageBadge stage={b.stage} />
+                        <span className="text-xs text-fg-muted">
+                          {b.count} job{b.count !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-fg tabular-nums">
+                          {formatCurrency(b.totalValue)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-full h-6 rounded-md bg-surface-2 overflow-hidden relative">
+                      <div
+                        className="h-full rounded-md bg-accent/20 transition-all flex items-center"
+                        style={{ width: `${Math.max(pct, 2)}%` }}
+                      >
+                        <div
+                          className="h-full rounded-md bg-accent transition-all"
+                          style={{ width: `${b.totalValue > 0 ? (b.weightedValue / b.totalValue) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-fg-subtle font-medium">
+                        {formatCurrency(b.weightedValue)} weighted
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Win rate donut */}
+        <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-fg">Win rate</h2>
+            <span className="text-xs text-fg-subtle">Last 90 days</span>
+          </div>
+          <div className="flex items-center gap-8">
+            {/* CSS donut */}
+            <div className="relative w-32 h-32 shrink-0">
+              <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                <circle
+                  cx="18" cy="18" r="14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  className="text-surface-2"
+                />
+                {wr.totalClosed > 0 && (
+                  <circle
+                    cx="18" cy="18" r="14"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    strokeDasharray={`${wr.winRate * 87.96} ${87.96 - wr.winRate * 87.96}`}
+                    strokeLinecap="round"
+                    className="text-success"
+                  />
+                )}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-2xl font-bold text-fg tabular-nums">
+                  {Math.round(wr.winRate * 100)}%
+                </span>
+                <span className="text-[10px] text-fg-subtle">win rate</span>
+              </div>
+            </div>
+            <div className="space-y-3 flex-1 min-w-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-success shrink-0" />
+                  <span className="text-sm text-fg">Won</span>
+                </div>
+                <div className="text-lg font-semibold text-fg tabular-nums ml-[18px]">{wr.won}</div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-danger shrink-0" />
+                  <span className="text-sm text-fg">Lost</span>
+                </div>
+                <div className="text-lg font-semibold text-fg tabular-nums ml-[18px]">{wr.lost}</div>
+              </div>
+              <div className="border-t border-border pt-2">
+                <div className="text-xs text-fg-subtle">Avg value: <strong className="text-fg">{formatCurrency(wr.avgDealValue)}</strong></div>
+                <div className="text-xs text-fg-subtle mt-0.5">Avg close: <strong className="text-fg">{wr.avgDaysToClose}d</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Revenue chart */}
+      <section className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-fg">Revenue trend</h2>
+          <span className="text-xs text-fg-subtle">Last 6 months (completed jobs)</span>
+        </div>
+        <div className="flex items-end gap-2 h-40">
+          {monthlyRevenue.map((m) => {
+            const pct = maxMonthly > 0 ? (m.value / maxMonthly) * 100 : 0;
+            return (
+              <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                <span className="text-[10px] text-fg-subtle font-medium tabular-nums">
+                  {m.value > 0 ? formatCurrency(m.value) : ""}
+                </span>
+                <div className="w-full flex-1 flex items-end">
+                  <div
+                    className="w-full rounded-t-md bg-accent transition-all hover:bg-accent/80"
+                    style={{ height: `${Math.max(pct, 2)}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-fg-subtle">{getMonthLabel(m.month)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Pipeline by stage - full detail */}
       {report.stageBreakdown.some((b) => b.count > 0) && (
         <section>
           <div className="flex items-center justify-between mb-3">

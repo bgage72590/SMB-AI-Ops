@@ -292,6 +292,20 @@ function migrate(conn: Database.Database): void {
       ON custom_field_values(userId, entityType, entityId);
     CREATE INDEX IF NOT EXISTS idx_cfv_entity
       ON custom_field_values(entityType, entityId);
+
+    CREATE TABLE IF NOT EXISTS automations (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      trigger     TEXT NOT NULL,
+      conditions  TEXT NOT NULL DEFAULT '{}',
+      action      TEXT NOT NULL,
+      actionConfig TEXT NOT NULL DEFAULT '{}',
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(userId);
   `);
 
   provisionWorkspaces(conn);
@@ -2252,4 +2266,126 @@ export function setCustomFields(
          updatedAt = excluded.updatedAt`
     )
     .run(newId(), userId, entityType, entityId, JSON.stringify(merged), now());
+}
+
+// ---------- Automations ----------
+
+export interface Automation {
+  id: string;
+  userId: string;
+  name: string;
+  enabled: boolean;
+  trigger: string;
+  conditions: Record<string, unknown>;
+  action: string;
+  actionConfig: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AutomationRow {
+  id: string;
+  userId: string;
+  name: string;
+  enabled: number;
+  trigger: string;
+  conditions: string;
+  action: string;
+  actionConfig: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function toAutomation(row: AutomationRow): Automation {
+  return {
+    ...row,
+    enabled: row.enabled === 1,
+    conditions: JSON.parse(row.conditions || "{}"),
+    actionConfig: JSON.parse(row.actionConfig || "{}"),
+  };
+}
+
+export function listAutomations(userId: string): Automation[] {
+  const rows = db()
+    .prepare("SELECT * FROM automations WHERE userId = ? ORDER BY createdAt DESC")
+    .all(userId) as AutomationRow[];
+  return rows.map(toAutomation);
+}
+
+export function getAutomation(userId: string, id: string): Automation | undefined {
+  const row = db()
+    .prepare("SELECT * FROM automations WHERE id = ? AND userId = ?")
+    .get(id, userId) as AutomationRow | undefined;
+  return row ? toAutomation(row) : undefined;
+}
+
+export function createAutomation(
+  userId: string,
+  input: {
+    name: string;
+    trigger: string;
+    conditions?: Record<string, unknown>;
+    action: string;
+    actionConfig?: Record<string, unknown>;
+    enabled?: boolean;
+  }
+): Automation {
+  const id = newId();
+  const ts = now();
+  db()
+    .prepare(
+      `INSERT INTO automations (id, userId, name, enabled, trigger, conditions, action, actionConfig, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      userId,
+      input.name,
+      input.enabled !== false ? 1 : 0,
+      input.trigger,
+      JSON.stringify(input.conditions || {}),
+      input.action,
+      JSON.stringify(input.actionConfig || {}),
+      ts,
+      ts
+    );
+  return getAutomation(userId, id)!;
+}
+
+export function updateAutomation(
+  userId: string,
+  id: string,
+  patch: {
+    name?: string;
+    enabled?: boolean;
+    trigger?: string;
+    conditions?: Record<string, unknown>;
+    action?: string;
+    actionConfig?: Record<string, unknown>;
+  }
+): Automation | undefined {
+  const existing = getAutomation(userId, id);
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (patch.name !== undefined) { sets.push("name = ?"); vals.push(patch.name); }
+  if (patch.enabled !== undefined) { sets.push("enabled = ?"); vals.push(patch.enabled ? 1 : 0); }
+  if (patch.trigger !== undefined) { sets.push("trigger = ?"); vals.push(patch.trigger); }
+  if (patch.conditions !== undefined) { sets.push("conditions = ?"); vals.push(JSON.stringify(patch.conditions)); }
+  if (patch.action !== undefined) { sets.push("action = ?"); vals.push(patch.action); }
+  if (patch.actionConfig !== undefined) { sets.push("actionConfig = ?"); vals.push(JSON.stringify(patch.actionConfig)); }
+
+  vals.push(id, userId);
+  db()
+    .prepare(`UPDATE automations SET ${sets.join(", ")} WHERE id = ? AND userId = ?`)
+    .run(...vals);
+  return getAutomation(userId, id);
+}
+
+export function deleteAutomation(userId: string, id: string): boolean {
+  const result = db()
+    .prepare("DELETE FROM automations WHERE id = ? AND userId = ?")
+    .run(id, userId);
+  return result.changes > 0;
 }

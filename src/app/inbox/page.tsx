@@ -4,8 +4,10 @@ import {
   CategoryBadge,
   PriorityBadge,
 } from "@/components/Badge";
+import { InboxThreadView } from "@/components/InboxThreadView";
+import type { ThreadEmail } from "@/components/InboxThreadView";
 import { Pagination, paginate } from "@/components/Pagination";
-import { listEmails } from "@/lib/store";
+import { listEmails, getContact } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
 import type { Email, EmailCategory } from "@/lib/types";
@@ -19,6 +21,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 type Filter = "all" | "unprocessed" | "new_lead" | "deal_update";
+type View = "flat" | "threaded";
 
 const FILTERS: Array<{ id: Filter; label: string }> = [
   { id: "all", label: "All" },
@@ -38,7 +41,7 @@ const PER_PAGE = 20;
 export default function InboxPage({
   searchParams,
 }: {
-  searchParams?: { filter?: string; page?: string };
+  searchParams?: { filter?: string; page?: string; view?: string };
 }) {
   const user = requireUser();
   const emails = listEmails(user.id);
@@ -51,6 +54,8 @@ export default function InboxPage({
       : "all"
   ) as Filter;
 
+  const activeView: View = searchParams?.view === "threaded" ? "threaded" : "flat";
+
   const filteredUnprocessed = applyFilter(unprocessed, activeFilter);
   const filteredProcessed = applyFilter(processed, activeFilter);
   const showUnprocessed = activeFilter !== "deal_update";
@@ -61,6 +66,32 @@ export default function InboxPage({
 
   const filterParams: Record<string, string> = {};
   if (activeFilter !== "all") filterParams.filter = activeFilter;
+  if (activeView !== "flat") filterParams.view = activeView;
+
+  const threadEmails: ThreadEmail[] = filteredProcessed.map((e) => {
+    const contact = e.contactId ? getContact(user.id, e.contactId) : undefined;
+    return {
+      id: e.id,
+      from: e.from,
+      fromName: e.fromName,
+      subject: e.subject,
+      body: e.body,
+      receivedAt: e.receivedAt,
+      category: e.category,
+      priority: e.priority,
+      summary: e.summary,
+      contactId: e.contactId,
+      contactName: contact?.name,
+    };
+  });
+
+  function viewHref(v: View) {
+    const params = new URLSearchParams();
+    if (activeFilter !== "all") params.set("filter", activeFilter);
+    if (v !== "flat") params.set("view", v);
+    const qs = params.toString();
+    return "/inbox" + (qs ? `?${qs}` : "");
+  }
 
   return (
     <div className="space-y-6">
@@ -75,26 +106,69 @@ export default function InboxPage({
         <ProcessButton />
       </div>
 
-      {/* Filter chips */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {FILTERS.map((f) => {
-          const isActive = f.id === activeFilter;
-          const href = f.id === "all" ? "/inbox" : `/inbox?filter=${f.id}`;
-          return (
-            <Link
-              key={f.id}
-              href={href}
-              className={
-                "inline-flex items-center h-7 px-3 rounded-full text-xs font-medium border transition-colors " +
-                (isActive
-                  ? "bg-accent text-accent-fg border-accent"
-                  : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
-              }
-            >
-              {f.label}
-            </Link>
-          );
-        })}
+      {/* Filter chips + view toggle */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          {FILTERS.map((f) => {
+            const isActive = f.id === activeFilter;
+            const params = new URLSearchParams();
+            if (f.id !== "all") params.set("filter", f.id);
+            if (activeView !== "flat") params.set("view", activeView);
+            const qs = params.toString();
+            const href = "/inbox" + (qs ? `?${qs}` : "");
+            return (
+              <Link
+                key={f.id}
+                href={href}
+                className={
+                  "inline-flex items-center h-7 px-3 rounded-full text-xs font-medium border transition-colors " +
+                  (isActive
+                    ? "bg-accent text-accent-fg border-accent"
+                    : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
+                }
+              >
+                {f.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* View toggle */}
+        <div className="flex items-center border border-border rounded-lg overflow-hidden">
+          <Link
+            href={viewHref("flat")}
+            className={
+              "px-2.5 py-1.5 text-[11px] font-medium transition-colors " +
+              (activeView === "flat"
+                ? "bg-accent text-accent-fg"
+                : "text-fg-muted hover:text-fg hover:bg-surface-2")
+            }
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline -mt-0.5 mr-1">
+              <line x1="8" y1="6" x2="21" y2="6" />
+              <line x1="8" y1="12" x2="21" y2="12" />
+              <line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" />
+              <line x1="3" y1="12" x2="3.01" y2="12" />
+              <line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+            Flat
+          </Link>
+          <Link
+            href={viewHref("threaded")}
+            className={
+              "px-2.5 py-1.5 text-[11px] font-medium transition-colors border-l border-border " +
+              (activeView === "threaded"
+                ? "bg-accent text-accent-fg"
+                : "text-fg-muted hover:text-fg hover:bg-surface-2")
+            }
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline -mt-0.5 mr-1">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Threads
+          </Link>
+        </div>
       </div>
 
       {/* Empty inbox */}
@@ -188,6 +262,8 @@ export default function InboxPage({
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/10 text-accent text-xs">&#9734;</span>
               No triaged messages for this filter.
             </div>
+          ) : activeView === "threaded" ? (
+            <InboxThreadView emails={threadEmails} />
           ) : (
             <>
               <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] divide-y divide-border overflow-hidden">

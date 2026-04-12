@@ -15,6 +15,7 @@ import {
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
 import { StageChanger } from "@/components/StageChanger";
+import { DealEditForm } from "@/components/DealEditForm";
 import type { Email, FollowUp } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +130,8 @@ export default function JobDetailPage({ params }: Props) {
                 </a>
               </div>
             )}
+
+            <DealEditForm deal={{ id: deal.id, title: deal.title, amount: deal.amount, currency: deal.currency, costMaterials: deal.costMaterials, costLabor: deal.costLabor, nextStep: deal.nextStep }} />
           </div>
 
           {/* Next step */}
