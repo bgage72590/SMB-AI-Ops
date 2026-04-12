@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   Card,
   CardHeader,
@@ -6,6 +7,7 @@ import {
   PageHeader,
 } from "@/components/ui";
 import { Pagination, paginate } from "@/components/Pagination";
+import { ContactSearch } from "@/components/ContactSearch";
 import { StageBadge } from "@/components/Badge";
 import { listContacts, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
@@ -18,13 +20,23 @@ const PER_PAGE = 25;
 export default function ClientsPage({
   searchParams,
 }: {
-  searchParams?: { page?: string };
+  searchParams?: { page?: string; q?: string };
 }) {
   const user = requireUser();
-  const contacts = listContacts(user.id);
+  const allContacts = listContacts(user.id);
   const deals = listDeals(user.id);
 
-  const withOpenJob = contacts.filter((c) =>
+  const q = searchParams?.q?.toLowerCase().trim();
+  const contacts = q
+    ? allContacts.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.email.toLowerCase().includes(q) ||
+          (c.company && c.company.toLowerCase().includes(q))
+      )
+    : allContacts;
+
+  const withOpenJob = allContacts.filter((c) =>
     deals.some(
       (d) =>
         d.contactId === c.id && d.stage !== "completed" && d.stage !== "lost"
@@ -34,13 +46,26 @@ export default function ClientsPage({
   const page = parseInt(searchParams?.page || "1", 10);
   const { items: pageContacts, currentPage, totalPages } = paginate(contacts, page, PER_PAGE);
 
+  const searchParamsForPagination: Record<string, string> = {};
+  if (q) searchParamsForPagination.q = searchParams!.q!;
+
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="CRM"
         title="Clients"
-        description={`${contacts.length} in your book \u00b7 ${withOpenJob} with an open job`}
+        description={`${allContacts.length} in your book \u00b7 ${withOpenJob} with an open job`}
       />
+
+      <Suspense>
+        <ContactSearch />
+      </Suspense>
+
+      {q && (
+        <p className="text-xs text-fg-subtle">
+          {contacts.length} result{contacts.length === 1 ? "" : "s"} for &ldquo;{searchParams!.q}&rdquo;
+        </p>
+      )}
 
       <Card className="overflow-hidden">
         <CardHeader
@@ -185,6 +210,7 @@ export default function ClientsPage({
                 currentPage={currentPage}
                 totalPages={totalPages}
                 basePath="/contacts"
+                searchParams={searchParamsForPagination}
               />
             </div>
           </>
