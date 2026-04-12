@@ -152,6 +152,8 @@ export interface FollowUp {
   sentAt?: string;
   /** Message ID returned by the email provider (e.g. Postmark). */
   sentMessageId?: string;
+  /** iCalendar (.ics) data when a concrete appointment time was detected. */
+  icsData?: string;
 }
 
 export interface StoreShape {

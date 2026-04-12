@@ -12,6 +12,7 @@ import {
   upsertContact,
 } from "./store";
 import { draftFollowUp, triageEmailSafe } from "./ai";
+import { generateIcs, parseSchedulingTime } from "./ical";
 import type { Email } from "./types";
 
 // The "brain" that turns a raw email into CRM side-effects. Every route
@@ -109,6 +110,28 @@ export async function processEmail(
         schedulingLink,
         userId,
       });
+      let icsData: string | undefined;
+      if (
+        triage.category === "scheduling" ||
+        triage.category === "new_lead"
+      ) {
+        const parsed = parseSchedulingTime(
+          `${email.subject} ${email.body}`
+        );
+        if (parsed) {
+          const end = new Date(parsed.getTime() + 60 * 60 * 1000);
+          icsData = generateIcs({
+            uid: `${email.id}@smbaiops`,
+            summary: deal?.title || email.subject,
+            description: triage.summary,
+            start: parsed,
+            end,
+            attendee: contact
+              ? { name: contact.name, email: contact.email }
+              : undefined,
+          });
+        }
+      }
       const created = createFollowUp(userId, {
         contactId,
         dealId,
@@ -116,6 +139,10 @@ export async function processEmail(
         subject: draft.subject,
         draft: draft.body,
         reason: draft.reason,
+        scheduledFor: icsData
+          ? parseSchedulingTime(`${email.subject} ${email.body}`)?.toISOString()
+          : undefined,
+        icsData,
       });
       followUpId = created.id;
     }

@@ -275,6 +275,7 @@ export default function DashboardPage() {
                           currentStatus={f.status}
                           canSend={canSend}
                           sentAt={f.sentAt}
+                          hasIcs={!!f.icsData}
                         />
                       </div>
                     </li>
