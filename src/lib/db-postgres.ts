@@ -262,4 +262,36 @@ export async function migratePostgres(): Promise<void> {
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_ws_invites_workspace ON workspace_invites("workspaceId")`;
   await sql`CREATE INDEX IF NOT EXISTS idx_ws_invites_email ON workspace_invites(email)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS enrichment_cache (
+      email       CITEXT PRIMARY KEY,
+      data        TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS custom_field_schemas (
+      id           TEXT PRIMARY KEY,
+      "userId"     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      "entityType" TEXT NOT NULL,
+      schema       TEXT NOT NULL,
+      "updatedAt"  TEXT NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_cfs_user_entity ON custom_field_schemas("userId", "entityType")`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS custom_field_values (
+      id           TEXT PRIMARY KEY,
+      "userId"     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      "entityType" TEXT NOT NULL,
+      "entityId"   TEXT NOT NULL,
+      data         TEXT NOT NULL,
+      "updatedAt"  TEXT NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_cfv_user_entity ON custom_field_values("userId", "entityType", "entityId")`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_cfv_entity ON custom_field_values("entityType", "entityId")`;
 }

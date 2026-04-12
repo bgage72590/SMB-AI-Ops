@@ -22,6 +22,20 @@ import {
   refreshAccessToken,
 } from "./google-calendar";
 import { checkUsageLimits } from "./plans";
+import {
+  isSlackConfigured,
+  sendSlackNotification,
+  buildNewLeadBlock,
+  buildDealUpdateBlock,
+} from "./slack";
+import {
+  isEnrichmentConfigured,
+  enrichContact as enrichContactLookup,
+} from "./enrichment";
+import {
+  getEnrichmentCache,
+  setEnrichmentCache,
+} from "./store";
 import type { Email } from "./types";
 
 // The "brain" that turns a raw email into CRM side-effects. Every route
@@ -228,6 +242,53 @@ export async function processEmail(
   }
   if (followUpId) {
     logAudit(userId, "drafted", "followUp", followUpId);
+  }
+
+  if (isSlackConfigured()) {
+    try {
+      if (triage.category === "new_lead") {
+        const contact = contactId ? getContact(userId, contactId) : undefined;
+        await sendSlackNotification(
+          buildNewLeadBlock({
+            contactName: contact?.name || email.fromName || email.from,
+            email: email.from,
+            subject: email.subject,
+            summary: triage.summary,
+            dealTitle: triage.suggested_deal?.title,
+            amount: triage.suggested_deal?.amount,
+          })
+        );
+      } else if (triage.category === "deal_update" && dealId) {
+        const deal = getDeal(userId, dealId);
+        const contact = contactId ? getContact(userId, contactId) : undefined;
+        if (deal) {
+          await sendSlackNotification(
+            buildDealUpdateBlock({
+              dealTitle: deal.title,
+              stage: deal.stage,
+              contactName: contact?.name || "Unknown",
+              amount: deal.amount,
+            })
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("[pipeline] Slack notification failed:", err);
+    }
+  }
+
+  if (contactId && isEnrichmentConfigured()) {
+    try {
+      const cached = getEnrichmentCache(email.from);
+      if (!cached) {
+        const enriched = await enrichContactLookup(email.from);
+        if (enriched) {
+          setEnrichmentCache(email.from, enriched as unknown as Record<string, unknown>);
+        }
+      }
+    } catch (err) {
+      console.warn("[pipeline] enrichment failed:", err);
+    }
   }
 
   return {

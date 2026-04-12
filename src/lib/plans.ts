@@ -8,25 +8,40 @@ const TIER_RANK: Record<PlanTier, number> = {
   pro: 2,
 };
 
-export function hasFeature(
-  user: User,
-  feature: "job_costing" | "calendar_ics" | "email_threading" | "ai_budget_controls" | "calendar_sync" | "sms_followups" | "team_members"
-): boolean {
+export type Feature =
+  | "job_costing"
+  | "calendar_ics"
+  | "email_threading"
+  | "ai_budget_controls"
+  | "calendar_sync"
+  | "sms_followups"
+  | "team_members"
+  | "pipeline_reports"
+  | "lead_enrichment"
+  | "slack_integration"
+  | "chat_widget"
+  | "ask_box"
+  | "custom_fields";
+
+export function hasFeature(user: User, feature: Feature): boolean {
   const tier = user.planTier ?? "free";
   switch (feature) {
     case "job_costing":
-      return TIER_RANK[tier] >= TIER_RANK.starter;
     case "calendar_ics":
-      return TIER_RANK[tier] >= TIER_RANK.starter;
     case "email_threading":
-      return TIER_RANK[tier] >= TIER_RANK.starter;
     case "sms_followups":
-      return TIER_RANK[tier] >= TIER_RANK.starter;
     case "calendar_sync":
       return TIER_RANK[tier] >= TIER_RANK.starter;
+    case "pipeline_reports":
+    case "ask_box":
+    case "chat_widget":
+      return TIER_RANK[tier] >= TIER_RANK.starter;
     case "ai_budget_controls":
-      return TIER_RANK[tier] >= TIER_RANK.pro;
     case "team_members":
+      return TIER_RANK[tier] >= TIER_RANK.pro;
+    case "lead_enrichment":
+    case "slack_integration":
+    case "custom_fields":
       return TIER_RANK[tier] >= TIER_RANK.pro;
   }
 }

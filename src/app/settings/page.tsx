@@ -158,6 +158,15 @@ export default function SettingsPage() {
                 Verify SPF, DKIM &amp; DMARC for deliverability
               </p>
             </Link>
+            <Link
+              href="/settings/widget"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Chat widget</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Embed a lead capture form on your website
+              </p>
+            </Link>
           </nav>
         </CardBody>
       </Card>
