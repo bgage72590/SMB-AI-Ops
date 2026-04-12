@@ -188,6 +188,32 @@ function migrate(conn: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created
       ON ai_usage(userId, createdAt);
+
+    CREATE TABLE IF NOT EXISTS sender_blocklist (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      pattern   TEXT NOT NULL COLLATE NOCASE,
+      reason    TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_blocklist_user
+      ON sender_blocklist(userId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_blocklist_user_pattern
+      ON sender_blocklist(userId, pattern);
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id         TEXT PRIMARY KEY,
+      userId     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      action     TEXT NOT NULL,
+      entityType TEXT NOT NULL,
+      entityId   TEXT,
+      detail     TEXT,
+      createdAt  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_user_created
+      ON audit_log(userId, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_audit_entity
+      ON audit_log(entityType, entityId);
   `);
 
   // Incremental column adds for existing installs that predate the userId
@@ -695,6 +721,10 @@ export function getUserByStripeCustomerId(
     .prepare("SELECT * FROM users WHERE stripeCustomerId = ?")
     .get(stripeCustomerId) as UserRow | undefined;
   return row ? rowToUser(row) : undefined;
+}
+
+export function listUsers(): User[] {
+  return (db().prepare("SELECT * FROM users").all() as UserRow[]).map(rowToUser);
 }
 
 export function getUserById(userId: string): User | undefined {
@@ -1708,4 +1738,93 @@ export function getSnapshot(userId: string): StoreShape {
     emails: listEmails(userId),
     followUps: listFollowUps(userId),
   };
+}
+
+// ---------- Sender blocklist ----------
+
+export interface BlocklistEntry {
+  id: string;
+  userId: string;
+  pattern: string;
+  reason?: string;
+  createdAt: string;
+}
+
+export function listBlocklistEntries(userId: string): BlocklistEntry[] {
+  return db()
+    .prepare(
+      "SELECT * FROM sender_blocklist WHERE userId = ? ORDER BY createdAt DESC"
+    )
+    .all(userId) as BlocklistEntry[];
+}
+
+export function addBlocklistEntry(
+  userId: string,
+  pattern: string,
+  reason?: string
+): BlocklistEntry {
+  const conn = db();
+  const id = newId();
+  const createdAt = now();
+  conn
+    .prepare(
+      "INSERT OR IGNORE INTO sender_blocklist (id, userId, pattern, reason, createdAt) VALUES (?, ?, ?, ?, ?)"
+    )
+    .run(id, userId, pattern.toLowerCase().trim(), reason ?? null, createdAt);
+  return { id, userId, pattern: pattern.toLowerCase().trim(), reason, createdAt };
+}
+
+export function removeBlocklistEntry(userId: string, id: string): boolean {
+  const result = db()
+    .prepare("DELETE FROM sender_blocklist WHERE id = ? AND userId = ?")
+    .run(id, userId);
+  return result.changes > 0;
+}
+
+export function isSenderBlocked(userId: string, senderEmail: string): boolean {
+  const email = senderEmail.toLowerCase().trim();
+  const domain = email.split("@")[1];
+  const row = db()
+    .prepare(
+      "SELECT 1 FROM sender_blocklist WHERE userId = ? AND (pattern = ? OR pattern = ?) LIMIT 1"
+    )
+    .get(userId, email, domain);
+  return !!row;
+}
+
+// ---------- Audit log ----------
+
+export interface AuditEntry {
+  id: string;
+  userId: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  detail?: string;
+  createdAt: string;
+}
+
+export function logAudit(
+  userId: string,
+  action: string,
+  entityType: string,
+  entityId?: string,
+  detail?: string
+): void {
+  db()
+    .prepare(
+      "INSERT INTO audit_log (id, userId, action, entityType, entityId, detail, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .run(newId(), userId, action, entityType, entityId ?? null, detail ?? null, now());
+}
+
+export function listAuditLog(
+  userId: string,
+  limit = 100
+): AuditEntry[] {
+  return db()
+    .prepare(
+      "SELECT * FROM audit_log WHERE userId = ? ORDER BY createdAt DESC LIMIT ?"
+    )
+    .all(userId, limit) as AuditEntry[];
 }

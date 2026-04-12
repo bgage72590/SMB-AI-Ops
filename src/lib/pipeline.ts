@@ -7,7 +7,9 @@ import {
   getDeal,
   getEmail,
   getUserById,
+  isSenderBlocked,
   listEmails,
+  logAudit,
   updateDeal,
   updateEmail,
   upsertContact,
@@ -51,6 +53,22 @@ export async function processEmail(
         summary: "Plan email limit reached — upgrade to process more emails.",
       };
     }
+  }
+
+  if (isSenderBlocked(userId, email.from)) {
+    updateEmail(userId, email.id, {
+      processed: true,
+      category: "other",
+      priority: "low",
+      summary: "Sender is on your blocklist.",
+    });
+    logAudit(userId, "blocked", "email", email.id, `Blocked sender: ${email.from}`);
+    return {
+      emailId: email.id,
+      category: "other",
+      priority: "low",
+      summary: "Sender is on your blocklist.",
+    };
   }
 
   const triage = await triageEmailSafe(email, { userId });
@@ -177,6 +195,20 @@ export async function processEmail(
     dealId,
     followUpId,
   });
+
+  logAudit(
+    userId,
+    "processed",
+    "email",
+    email.id,
+    `${triage.category} / ${triage.priority}: ${triage.summary.slice(0, 120)}`
+  );
+  if (dealId) {
+    logAudit(userId, contactId ? "updated" : "created", "deal", dealId);
+  }
+  if (followUpId) {
+    logAudit(userId, "drafted", "followUp", followUpId);
+  }
 
   return {
     emailId: email.id,

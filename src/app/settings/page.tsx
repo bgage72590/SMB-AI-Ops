@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getUserById } from "@/lib/store";
 import { PLANS, isStripeConfigured } from "@/lib/stripe";
@@ -95,6 +96,42 @@ export default function SettingsPage() {
           {stripeReady && fresh.stripeCustomerId && (
             <BillingActions action="portal" />
           )}
+        </CardBody>
+      </Card>
+
+      {/* Quick links */}
+      <Card>
+        <CardHeader title="More settings" />
+        <CardBody>
+          <nav className="grid gap-2 sm:grid-cols-3">
+            <Link
+              href="/settings/usage"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">AI Usage</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Token counts, costs, and recent AI calls
+              </p>
+            </Link>
+            <Link
+              href="/settings/privacy"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Privacy</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Sender blocklist and data controls
+              </p>
+            </Link>
+            <Link
+              href="/settings/audit"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Audit log</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Timeline of every AI action
+              </p>
+            </Link>
+          </nav>
         </CardBody>
       </Card>
 
