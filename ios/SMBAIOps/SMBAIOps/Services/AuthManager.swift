@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 
+@MainActor
 @Observable
 final class AuthManager {
     var currentUser: User?
@@ -17,8 +18,7 @@ final class AuthManager {
         }
     }
 
-    @MainActor
-    func checkSession() async {
+    funccheckSession() async {
         isLoading = true
         defer { isLoading = false }
 
@@ -33,22 +33,19 @@ final class AuthManager {
         }
     }
 
-    @MainActor
-    func login(email: String, password: String) async throws {
+    funclogin(email: String, password: String) async throws {
         let response: AuthResponse = try await api.post("/api/auth/login", body: LoginRequest(email: email, password: password))
         currentUser = response.user
         cacheUser(response.user)
     }
 
-    @MainActor
-    func signup(name: String, email: String, password: String) async throws {
+    funcsignup(name: String, email: String, password: String) async throws {
         let response: AuthResponse = try await api.post("/api/auth/signup", body: SignupRequest(name: name, email: email, password: password))
         currentUser = response.user
         cacheUser(response.user)
     }
 
-    @MainActor
-    func logout() async {
+    funclogout() async {
         try? await api.postNoContent("/api/auth/logout", body: EmptyBody())
         api.clearCookies()
         currentUser = nil

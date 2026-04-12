@@ -30,12 +30,12 @@ enum APIError: LocalizedError {
     }
 }
 
-final class APIClient: @unchecked Sendable {
+final class APIClient: Sendable {
     static let shared = APIClient()
 
     private let session: URLSession
-    private let decoder = JSONDecoder()
-    private let encoder = JSONEncoder()
+    private nonisolated(unsafe) let decoder = JSONDecoder()
+    private nonisolated(unsafe) let encoder = JSONEncoder()
 
     var baseURL: String {
         get { UserDefaults.standard.string(forKey: "api_base_url") ?? "http://localhost:3000" }
