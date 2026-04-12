@@ -10,9 +10,10 @@ interface Props {
   currentStatus: "draft" | "approved" | "sent" | "dismissed";
   canSend: boolean;
   sentAt?: string;
+  hasIcs?: boolean;
 }
 
-export function FollowUpActions({ id, currentStatus, canSend, sentAt }: Props) {
+export function FollowUpActions({ id, currentStatus, canSend, sentAt, hasIcs }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +77,16 @@ export function FollowUpActions({ id, currentStatus, canSend, sentAt }: Props) {
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
+        {hasIcs && (
+          <a
+            href={`/api/followups/ics?id=${id}`}
+            download
+            className="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-fg-subtle hover:text-fg hover:bg-surface-raised transition-colors"
+            title="Download calendar invite (.ics)"
+          >
+            Cal
+          </a>
+        )}
         {canSend ? (
           <Button
             type="button"

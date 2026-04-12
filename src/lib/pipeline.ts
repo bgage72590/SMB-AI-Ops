@@ -6,12 +6,15 @@ import {
   getContact,
   getDeal,
   getEmail,
+  getUserById,
   listEmails,
   updateDeal,
   updateEmail,
   upsertContact,
 } from "./store";
 import { draftFollowUp, triageEmailSafe } from "./ai";
+import { generateIcs, parseSchedulingTime } from "./ical";
+import { checkUsageLimits } from "./plans";
 import type { Email } from "./types";
 
 // The "brain" that turns a raw email into CRM side-effects. Every route
@@ -33,6 +36,23 @@ export async function processEmail(
   userId: string,
   email: Email
 ): Promise<PipelineResult> {
+  const owner = getUserById(userId);
+  if (owner) {
+    const limits = checkUsageLimits(owner);
+    if (limits.overLimit) {
+      console.warn(
+        `User ${userId} over email limit (${limits.emailsUsed}/${limits.emailsLimit}), skipping AI pipeline`
+      );
+      updateEmail(userId, email.id, { processed: true });
+      return {
+        emailId: email.id,
+        category: "other",
+        priority: "normal",
+        summary: "Plan email limit reached — upgrade to process more emails.",
+      };
+    }
+  }
+
   const triage = await triageEmailSafe(email, { userId });
 
   // Resolve or create contact.
@@ -109,6 +129,28 @@ export async function processEmail(
         schedulingLink,
         userId,
       });
+      let icsData: string | undefined;
+      if (
+        triage.category === "scheduling" ||
+        triage.category === "new_lead"
+      ) {
+        const parsed = parseSchedulingTime(
+          `${email.subject} ${email.body}`
+        );
+        if (parsed) {
+          const end = new Date(parsed.getTime() + 60 * 60 * 1000);
+          icsData = generateIcs({
+            uid: `${email.id}@smbaiops`,
+            summary: deal?.title || email.subject,
+            description: triage.summary,
+            start: parsed,
+            end,
+            attendee: contact
+              ? { name: contact.name, email: contact.email }
+              : undefined,
+          });
+        }
+      }
       const created = createFollowUp(userId, {
         contactId,
         dealId,
@@ -116,6 +158,10 @@ export async function processEmail(
         subject: draft.subject,
         draft: draft.body,
         reason: draft.reason,
+        scheduledFor: icsData
+          ? parseSchedulingTime(`${email.subject} ${email.body}`)?.toISOString()
+          : undefined,
+        icsData,
       });
       followUpId = created.id;
     }

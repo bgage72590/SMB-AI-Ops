@@ -82,6 +82,7 @@ export default function FollowUpsPage() {
                           currentStatus={f.status}
                           canSend={canSend}
                           sentAt={f.sentAt}
+                          hasIcs={!!f.icsData}
                         />
                       </div>
                     </div>
@@ -121,6 +122,7 @@ export default function FollowUpsPage() {
                       currentStatus={f.status}
                       canSend={canSend}
                       sentAt={f.sentAt}
+                      hasIcs={!!f.icsData}
                     />
                   </li>
                 );

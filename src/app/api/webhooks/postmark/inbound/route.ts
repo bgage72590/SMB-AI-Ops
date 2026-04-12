@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { createEmail, findUserByInboundAddress, getFirstUser } from "@/lib/store";
+import {
+  createEmail,
+  findFollowUpBySentMessageId,
+  findUserByInboundAddress,
+  getFirstUser,
+  updateEmail,
+} from "@/lib/store";
 import { processEmail } from "@/lib/pipeline";
 import { enqueueEmailProcessing } from "@/lib/jobs";
 import {
@@ -90,6 +96,20 @@ export async function POST(request: Request) {
     receivedAt: payload.Date ? new Date(payload.Date).toISOString() : undefined,
   });
 
+  // Thread matching: if this email is a reply to one we sent, link it back
+  // to the same contact / deal so the pipeline has prior context.
+  const replyToIds = extractReplyMessageIds(payload);
+  for (const msgId of replyToIds) {
+    const original = findFollowUpBySentMessageId(owner.id, msgId);
+    if (original) {
+      updateEmail(owner.id, email.id, {
+        contactId: original.contactId,
+        dealId: original.dealId ?? undefined,
+      });
+      break;
+    }
+  }
+
   if (asyncMode()) {
     // Enqueue and ack. The background worker picks it up; the email is
     // already persisted so at worst processing is delayed, not lost.
@@ -111,6 +131,21 @@ export async function POST(request: Request) {
       { status: 200 }
     );
   }
+}
+
+function extractReplyMessageIds(payload: PostmarkInboundPayload): string[] {
+  const ids: string[] = [];
+  if (!payload.Headers) return ids;
+  for (const h of payload.Headers) {
+    const name = h.Name.toLowerCase();
+    if (name === "in-reply-to" || name === "references") {
+      const matches = h.Value.match(/<[^>]+>/g);
+      if (matches) {
+        for (const m of matches) ids.push(m.slice(1, -1));
+      }
+    }
+  }
+  return ids;
 }
 
 function stripHtml(html: string): string {

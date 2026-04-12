@@ -4,6 +4,16 @@
 // map them 1:1 onto SQLite rows. Every user-owned row carries a `userId`
 // foreign key so everything can be scoped to a single workspace.
 
+export type SubscriptionStatus =
+  | "active"
+  | "trialing"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "incomplete";
+
+export type PlanTier = "free" | "starter" | "pro";
+
 export interface User {
   id: string;
   email: string;
@@ -14,6 +24,16 @@ export interface User {
    * set, the inbound webhook falls back to the first user in the database.
    */
   inboundAddress?: string;
+  /**
+   * Weekly AI spend budget in USD. When the rolling 7-day spend exceeds this
+   * the platform falls back to heuristic mode. 0 = unlimited.
+   */
+  aiWeeklyBudgetUsd: number;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripePriceId?: string;
+  subscriptionStatus?: SubscriptionStatus;
+  planTier: PlanTier;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,6 +122,8 @@ export interface Deal {
   stage: DealStage;
   amount: number; // in whole currency units (e.g. USD)
   currency: string;
+  costMaterials: number;
+  costLabor: number;
   nextStep?: string;
   lastActivityAt: string;
   createdAt: string;
@@ -145,6 +167,8 @@ export interface FollowUp {
   sentAt?: string;
   /** Message ID returned by the email provider (e.g. Postmark). */
   sentMessageId?: string;
+  /** iCalendar (.ics) data when a concrete appointment time was detected. */
+  icsData?: string;
 }
 
 export interface StoreShape {

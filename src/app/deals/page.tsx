@@ -38,6 +38,10 @@ export default function JobsPage() {
   );
   const openValue = openDeals.reduce((sum, d) => sum + d.amount, 0);
   const bookedValue = byStage.completed.reduce((s, d) => s + d.amount, 0);
+  const bookedProfit = byStage.completed.reduce(
+    (s, d) => s + (d.amount - d.costMaterials - d.costLabor),
+    0
+  );
 
   return (
     <div className="space-y-6">
@@ -56,7 +60,7 @@ export default function JobsPage() {
         <StatCard
           label="Booked"
           value={formatCurrency(bookedValue)}
-          hint={`${byStage.completed.length} completed`}
+          hint={`${formatCurrency(bookedProfit)} profit · ${byStage.completed.length} completed`}
         />
         <StatCard
           label="Scheduled"

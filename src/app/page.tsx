@@ -26,6 +26,7 @@ import {
 } from "@/lib/store";
 import { formatCurrency, formatRelative, formatUsdFine } from "@/lib/format";
 import { isAIConfigured } from "@/lib/ai";
+import { checkAiBudget } from "@/lib/aiUsage";
 import { isPostmarkConfigured } from "@/lib/postmark";
 import { requireUser } from "@/lib/auth";
 
@@ -51,10 +52,14 @@ export default function DashboardPage() {
   // "Booked this week" — completed jobs whose lastActivityAt is in the
   // last 7 days. Clean directional metric for a local service business.
   const weekAgo = Date.now() - WEEK_MS;
-  const bookedThisWeek = deals
+  const completedThisWeek = deals
     .filter((d) => d.stage === "completed")
-    .filter((d) => new Date(d.lastActivityAt).getTime() >= weekAgo)
-    .reduce((sum, d) => sum + d.amount, 0);
+    .filter((d) => new Date(d.lastActivityAt).getTime() >= weekAgo);
+  const bookedThisWeek = completedThisWeek.reduce((sum, d) => sum + d.amount, 0);
+  const profitThisWeek = completedThisWeek.reduce(
+    (sum, d) => sum + (d.amount - d.costMaterials - d.costLabor),
+    0
+  );
 
   const newClientsThisWeek = contacts.filter(
     (c) => new Date(c.createdAt).getTime() >= weekAgo
@@ -62,6 +67,7 @@ export default function DashboardPage() {
 
   const weekAgoIso = new Date(weekAgo).toISOString();
   const aiUsage = sumAiUsageSince(user.id, weekAgoIso);
+  const aiBudget = checkAiBudget(user.id);
 
   // "AI just did this" — emails the pipeline has already triaged,
   // freshest first, with the chip + one-liner summary.
@@ -109,6 +115,30 @@ export default function DashboardPage() {
       {user.inboundAddress && (
         <InboundAddressCard address={user.inboundAddress} />
       )}
+
+      {aiBudget.budgetUsd > 0 && aiBudget.exceeded && (
+        <Card className="p-4 border-danger/40 bg-danger-soft">
+          <p className="text-sm text-fg">
+            <strong>AI budget exceeded.</strong> You've spent{" "}
+            {formatUsdFine(aiBudget.spentUsd)} of your{" "}
+            {formatUsdFine(aiBudget.budgetUsd)}/week budget. The platform is
+            running in heuristic fallback mode until next week's window opens.
+          </p>
+        </Card>
+      )}
+
+      {aiBudget.budgetUsd > 0 &&
+        !aiBudget.exceeded &&
+        aiBudget.warningPct >= 80 && (
+          <Card className="p-4 border-warning/40 bg-warning-soft">
+            <p className="text-sm text-fg">
+              <strong>Heads up:</strong> You've used {aiBudget.warningPct}% of
+              your {formatUsdFine(aiBudget.budgetUsd)}/week AI budget (
+              {formatUsdFine(aiBudget.spentUsd)} spent,{" "}
+              {formatUsdFine(aiBudget.remaining)} left).
+            </p>
+          </Card>
+        )}
 
       {/* Hero: what needs the owner's attention right now. */}
       <Card className="overflow-hidden">
@@ -165,7 +195,7 @@ export default function DashboardPage() {
         <StatCard
           label="Booked this week"
           value={formatCurrency(bookedThisWeek)}
-          hint={`${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}`}
+          hint={`${formatCurrency(profitThisWeek)} profit · ${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}`}
         />
         <StatCard
           label="Open job value"
@@ -185,7 +215,11 @@ export default function DashboardPage() {
         <StatCard
           label="AI spend · 7d"
           value={formatUsdFine(aiUsage.totalCostUsd)}
-          hint={`${aiUsage.calls} AI call${aiUsage.calls === 1 ? "" : "s"}`}
+          hint={
+            aiBudget.budgetUsd > 0
+              ? `${aiBudget.warningPct}% of ${formatUsdFine(aiBudget.budgetUsd)} budget`
+              : `${aiUsage.calls} AI call${aiUsage.calls === 1 ? "" : "s"}`
+          }
         />
       </section>
 
@@ -241,6 +275,7 @@ export default function DashboardPage() {
                           currentStatus={f.status}
                           canSend={canSend}
                           sentAt={f.sentAt}
+                          hasIcs={!!f.icsData}
                         />
                       </div>
                     </li>

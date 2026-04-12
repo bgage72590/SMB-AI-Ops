@@ -9,8 +9,10 @@ import type {
   EmailCategory,
   EmailPriority,
   FollowUp,
+  PlanTier,
   Session,
   StoreShape,
+  SubscriptionStatus,
   User,
 } from "./types";
 import { LEGACY_STAGE_MAP } from "./types";
@@ -197,6 +199,15 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "followUps", "userId", "TEXT");
   addColumnIfMissing(conn, "followUps", "sentAt", "TEXT");
   addColumnIfMissing(conn, "followUps", "sentMessageId", "TEXT");
+  addColumnIfMissing(conn, "deals", "costMaterials", "REAL DEFAULT 0");
+  addColumnIfMissing(conn, "deals", "costLabor", "REAL DEFAULT 0");
+  addColumnIfMissing(conn, "users", "aiWeeklyBudgetUsd", "REAL DEFAULT 0");
+  addColumnIfMissing(conn, "followUps", "icsData", "TEXT");
+  addColumnIfMissing(conn, "users", "stripeCustomerId", "TEXT");
+  addColumnIfMissing(conn, "users", "stripeSubscriptionId", "TEXT");
+  addColumnIfMissing(conn, "users", "stripePriceId", "TEXT");
+  addColumnIfMissing(conn, "users", "subscriptionStatus", "TEXT");
+  addColumnIfMissing(conn, "users", "planTier", "TEXT DEFAULT 'free'");
 
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -300,6 +311,12 @@ interface UserRow {
   passwordHash: string;
   name: string;
   inboundAddress: string | null;
+  aiWeeklyBudgetUsd: number;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+  subscriptionStatus: string | null;
+  planTier: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -310,6 +327,12 @@ function rowToUser(row: UserRow): User {
     email: row.email,
     name: row.name,
     inboundAddress: row.inboundAddress ?? undefined,
+    aiWeeklyBudgetUsd: row.aiWeeklyBudgetUsd ?? 0,
+    stripeCustomerId: row.stripeCustomerId ?? undefined,
+    stripeSubscriptionId: row.stripeSubscriptionId ?? undefined,
+    stripePriceId: row.stripePriceId ?? undefined,
+    subscriptionStatus: (row.subscriptionStatus as SubscriptionStatus) ?? undefined,
+    planTier: (row.planTier as PlanTier) ?? "free",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -360,6 +383,8 @@ interface DealRow {
   stage: DealStage;
   amount: number;
   currency: string;
+  costMaterials: number;
+  costLabor: number;
   nextStep: string | null;
   lastActivityAt: string;
   createdAt: string;
@@ -375,6 +400,8 @@ function rowToDeal(row: DealRow): Deal {
     stage: row.stage,
     amount: row.amount,
     currency: row.currency,
+    costMaterials: row.costMaterials ?? 0,
+    costLabor: row.costLabor ?? 0,
     nextStep: row.nextStep ?? undefined,
     lastActivityAt: row.lastActivityAt,
     createdAt: row.createdAt,
@@ -434,6 +461,7 @@ interface FollowUpRow {
   scheduledFor: string | null;
   sentAt: string | null;
   sentMessageId: string | null;
+  icsData: string | null;
 }
 
 function rowToFollowUp(row: FollowUpRow): FollowUp {
@@ -451,6 +479,7 @@ function rowToFollowUp(row: FollowUpRow): FollowUp {
     scheduledFor: row.scheduledFor ?? undefined,
     sentAt: row.sentAt ?? undefined,
     sentMessageId: row.sentMessageId ?? undefined,
+    icsData: row.icsData ?? undefined,
   };
 }
 
@@ -478,8 +507,8 @@ function insertContactRow(conn: Database.Database, c: Contact): void {
 function insertDealRow(conn: Database.Database, d: Deal): void {
   conn
     .prepare(
-      `INSERT INTO deals (id, userId, title, contactId, stage, amount, currency, nextStep, lastActivityAt, createdAt, updatedAt)
-       VALUES (@id, @userId, @title, @contactId, @stage, @amount, @currency, @nextStep, @lastActivityAt, @createdAt, @updatedAt)`
+      `INSERT INTO deals (id, userId, title, contactId, stage, amount, currency, costMaterials, costLabor, nextStep, lastActivityAt, createdAt, updatedAt)
+       VALUES (@id, @userId, @title, @contactId, @stage, @amount, @currency, @costMaterials, @costLabor, @nextStep, @lastActivityAt, @createdAt, @updatedAt)`
     )
     .run({
       id: d.id,
@@ -489,6 +518,8 @@ function insertDealRow(conn: Database.Database, d: Deal): void {
       stage: d.stage,
       amount: d.amount,
       currency: d.currency,
+      costMaterials: d.costMaterials,
+      costLabor: d.costLabor,
       nextStep: d.nextStep ?? null,
       lastActivityAt: d.lastActivityAt,
       createdAt: d.createdAt,
@@ -524,8 +555,8 @@ function insertEmailRow(conn: Database.Database, e: Email): void {
 function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
   conn
     .prepare(
-      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor, sentAt, sentMessageId)
-       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor, @sentAt, @sentMessageId)`
+      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor, sentAt, sentMessageId, icsData)
+       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor, @sentAt, @sentMessageId, @icsData)`
     )
     .run({
       id: f.id,
@@ -541,6 +572,7 @@ function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
       scheduledFor: f.scheduledFor ?? null,
       sentAt: f.sentAt ?? null,
       sentMessageId: f.sentMessageId ?? null,
+      icsData: f.icsData ?? null,
     });
 }
 
@@ -574,6 +606,8 @@ export function createUserRow(input: {
     email: input.email,
     name: input.name,
     inboundAddress: input.inboundAddress,
+    aiWeeklyBudgetUsd: 0,
+    planTier: "free" as const,
     createdAt: nowStr,
     updatedAt: nowStr,
   };
@@ -592,6 +626,67 @@ export function updateUserInboundAddress(
     .run(inboundAddress, nowStr, userId);
   if (result.changes === 0) return undefined;
   return getUserById(userId);
+}
+
+export function updateUserAiBudget(
+  userId: string,
+  budgetUsd: number
+): User | undefined {
+  const conn = db();
+  const result = conn
+    .prepare(
+      `UPDATE users SET aiWeeklyBudgetUsd = ?, updatedAt = ? WHERE id = ?`
+    )
+    .run(budgetUsd, now(), userId);
+  if (result.changes === 0) return undefined;
+  return getUserById(userId);
+}
+
+export function updateUserStripe(
+  userId: string,
+  fields: {
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string | null;
+    stripePriceId?: string | null;
+    subscriptionStatus?: string | null;
+    planTier?: PlanTier;
+  }
+): User | undefined {
+  const conn = db();
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (fields.stripeCustomerId !== undefined) {
+    sets.push("stripeCustomerId = ?");
+    vals.push(fields.stripeCustomerId);
+  }
+  if (fields.stripeSubscriptionId !== undefined) {
+    sets.push("stripeSubscriptionId = ?");
+    vals.push(fields.stripeSubscriptionId);
+  }
+  if (fields.stripePriceId !== undefined) {
+    sets.push("stripePriceId = ?");
+    vals.push(fields.stripePriceId);
+  }
+  if (fields.subscriptionStatus !== undefined) {
+    sets.push("subscriptionStatus = ?");
+    vals.push(fields.subscriptionStatus);
+  }
+  if (fields.planTier !== undefined) {
+    sets.push("planTier = ?");
+    vals.push(fields.planTier);
+  }
+  vals.push(userId);
+  conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getUserById(userId);
+}
+
+export function getUserByStripeCustomerId(
+  stripeCustomerId: string
+): User | undefined {
+  const row = db()
+    .prepare("SELECT * FROM users WHERE stripeCustomerId = ?")
+    .get(stripeCustomerId) as UserRow | undefined;
+  return row ? rowToUser(row) : undefined;
 }
 
 export function getUserById(userId: string): User | undefined {
@@ -1089,6 +1184,8 @@ export function createDeal(
     stage?: DealStage;
     amount?: number;
     currency?: string;
+    costMaterials?: number;
+    costLabor?: number;
     nextStep?: string;
   }
 ): Deal {
@@ -1100,6 +1197,8 @@ export function createDeal(
     stage: input.stage ?? "inquiry",
     amount: input.amount ?? 0,
     currency: input.currency ?? "USD",
+    costMaterials: input.costMaterials ?? 0,
+    costLabor: input.costLabor ?? 0,
     nextStep: input.nextStep,
     lastActivityAt: now(),
     createdAt: now(),
@@ -1130,6 +1229,8 @@ export function updateDeal(
     stage: patch.stage ?? existing.stage,
     amount: patch.amount ?? existing.amount,
     currency: patch.currency ?? existing.currency,
+    costMaterials: patch.costMaterials ?? existing.costMaterials,
+    costLabor: patch.costLabor ?? existing.costLabor,
     nextStep: patch.nextStep ?? existing.nextStep,
     lastActivityAt,
     createdAt: existing.createdAt,
@@ -1144,6 +1245,8 @@ export function updateDeal(
          stage = @stage,
          amount = @amount,
          currency = @currency,
+         costMaterials = @costMaterials,
+         costLabor = @costLabor,
          nextStep = @nextStep,
          lastActivityAt = @lastActivityAt,
          updatedAt = @updatedAt
@@ -1157,6 +1260,8 @@ export function updateDeal(
       stage: next.stage,
       amount: next.amount,
       currency: next.currency,
+      costMaterials: next.costMaterials,
+      costLabor: next.costLabor,
       nextStep: next.nextStep ?? null,
       lastActivityAt: next.lastActivityAt,
       updatedAt: next.updatedAt,
@@ -1336,6 +1441,18 @@ export function listFollowUpsForContact(
   return rows.map(rowToFollowUp);
 }
 
+export function findFollowUpBySentMessageId(
+  userId: string,
+  messageId: string
+): FollowUp | undefined {
+  const row = db()
+    .prepare(
+      "SELECT * FROM followUps WHERE userId = ? AND sentMessageId = ?"
+    )
+    .get(userId, messageId) as FollowUpRow | undefined;
+  return row ? rowToFollowUp(row) : undefined;
+}
+
 export function listFollowUpsForDeal(
   userId: string,
   dealId: string
@@ -1360,6 +1477,7 @@ export function createFollowUp(
     draft: string;
     reason: string;
     scheduledFor?: string;
+    icsData?: string;
   }
 ): FollowUp {
   const followUp: FollowUp = {
@@ -1374,6 +1492,7 @@ export function createFollowUp(
     status: "draft",
     createdAt: now(),
     scheduledFor: input.scheduledFor,
+    icsData: input.icsData,
   };
   insertFollowUpRow(db(), followUp);
   return followUp;
@@ -1411,6 +1530,10 @@ export function updateFollowUp(
       patch.sentMessageId !== undefined
         ? patch.sentMessageId ?? null
         : existing.sentMessageId,
+    icsData:
+      patch.icsData !== undefined
+        ? patch.icsData ?? null
+        : existing.icsData,
   };
 
   conn
@@ -1425,7 +1548,8 @@ export function updateFollowUp(
          status = @status,
          scheduledFor = @scheduledFor,
          sentAt = @sentAt,
-         sentMessageId = @sentMessageId
+         sentMessageId = @sentMessageId,
+         icsData = @icsData
        WHERE id = @id AND userId = @userId`
     )
     .run({
@@ -1441,6 +1565,7 @@ export function updateFollowUp(
       scheduledFor: next.scheduledFor,
       sentAt: next.sentAt,
       sentMessageId: next.sentMessageId,
+      icsData: next.icsData,
     });
 
   return rowToFollowUp(next);

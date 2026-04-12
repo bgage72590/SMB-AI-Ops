@@ -7,7 +7,7 @@ import type {
   EmailPriority,
   Contact,
 } from "./types";
-import { logAiUsage, type UsageLike } from "./aiUsage";
+import { checkAiBudget, logAiUsage, type UsageLike } from "./aiUsage";
 
 // Thin wrapper around the Anthropic SDK so the rest of the codebase doesn't
 // need to know which model, prompts, or tool format we're using.
@@ -228,6 +228,10 @@ export async function triageEmailSafe(
   opts: { userId?: string } = {}
 ): Promise<TriageResult> {
   if (!isAIConfigured()) return heuristicTriage(email);
+  if (opts.userId && checkAiBudget(opts.userId).exceeded) {
+    console.warn("AI budget exceeded, falling back to heuristic for triage");
+    return heuristicTriage(email);
+  }
   try {
     return await triageEmail(email, opts);
   } catch (err) {
@@ -346,6 +350,10 @@ export async function draftFollowUp(
   input: DraftFollowUpInput
 ): Promise<FollowUpDraft> {
   if (!isAIConfigured()) return heuristicDraft(input);
+  if (input.userId && checkAiBudget(input.userId).exceeded) {
+    console.warn("AI budget exceeded, falling back to heuristic for draft");
+    return heuristicDraft(input);
+  }
   try {
     // See triageEmail for why this uses the beta prompt-caching endpoint.
     const response = await client().beta.promptCaching.messages.create({

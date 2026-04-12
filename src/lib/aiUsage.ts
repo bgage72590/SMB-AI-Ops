@@ -1,4 +1,4 @@
-import { recordAiUsage } from "./store";
+import { getUserById, recordAiUsage, sumAiUsageSince } from "./store";
 
 // Per-million-token pricing, in USD. Kept here (rather than loaded from
 // the API) so we can compute cost estimates without an extra round-trip
@@ -58,6 +58,35 @@ export function estimateCost(model: string, usage: UsageLike): number {
     (cached * p.cachedInput) / 1_000_000 +
     (written * p.cacheWrite) / 1_000_000
   );
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface BudgetStatus {
+  budgetUsd: number;
+  spentUsd: number;
+  remaining: number;
+  exceeded: boolean;
+  warningPct: number;
+}
+
+export function checkAiBudget(userId: string): BudgetStatus {
+  const user = getUserById(userId);
+  const budget = user?.aiWeeklyBudgetUsd ?? 0;
+  if (budget <= 0) {
+    return { budgetUsd: 0, spentUsd: 0, remaining: Infinity, exceeded: false, warningPct: 0 };
+  }
+  const sinceIso = new Date(Date.now() - WEEK_MS).toISOString();
+  const usage = sumAiUsageSince(userId, sinceIso);
+  const spent = usage.totalCostUsd;
+  const remaining = budget - spent;
+  return {
+    budgetUsd: budget,
+    spentUsd: spent,
+    remaining,
+    exceeded: remaining <= 0,
+    warningPct: Math.min(100, Math.round((spent / budget) * 100)),
+  };
 }
 
 export function logAiUsage(input: {

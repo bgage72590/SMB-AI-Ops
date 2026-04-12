@@ -19,6 +19,7 @@ export interface PostmarkInboundPayload {
   TextBody?: string;
   HtmlBody?: string;
   StrippedTextReply?: string;
+  Headers?: Array<{ Name: string; Value: string }>;
 }
 
 export interface SendEmailInput {

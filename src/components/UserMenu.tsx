@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function UserMenu({ name, email }: { name: string; email: string }) {
@@ -27,6 +28,12 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
         <div className="text-fg font-medium">{name}</div>
         <div className="text-fg-subtle text-xs">{email}</div>
       </div>
+      <Link
+        href="/settings"
+        className="px-2.5 py-1 text-xs font-medium rounded-md bg-surface-2 text-fg-muted hover:bg-border"
+      >
+        Settings
+      </Link>
       <button
         type="button"
         onClick={logout}
