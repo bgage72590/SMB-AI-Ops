@@ -5,6 +5,7 @@ import {
   PriorityBadge,
   StageBadge,
 } from "@/components/Badge";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import {
   Card,
   CardBody,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
+import { StageChanger } from "@/components/StageChanger";
 import type { Email, FollowUp } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -76,17 +78,17 @@ export default function JobDetailPage({ params }: Props) {
   return (
     <div className="space-y-8">
       <div>
-        <Link
-          href="/deals"
-          className="text-xs text-fg-subtle hover:text-fg-muted"
-        >
-          ← All jobs
-        </Link>
+        <Breadcrumb
+          items={[
+            { label: "Jobs", href: "/deals" },
+            { label: deal.title },
+          ]}
+        />
         <PageHeader
           className="mt-2"
           eyebrow={
             <span className="inline-flex items-center gap-2">
-              <StageBadge stage={deal.stage} />
+              <StageChanger dealId={deal.id} currentStage={deal.stage} />
               <span>Job</span>
             </span>
           }

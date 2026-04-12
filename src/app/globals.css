@@ -149,3 +149,26 @@ body {
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.4);
 }
+
+/* Subtle page content fade-in. */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+main > * {
+  animation: fade-up 0.2s ease-out both;
+}
+
+/* Card hover lift. */
+.card {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.card:hover {
+  box-shadow: var(--shadow-pop);
+}

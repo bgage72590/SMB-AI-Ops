@@ -53,6 +53,17 @@ export default function JobsPage({
         eyebrow="Pipeline"
         title="Jobs"
         description={`${deals.length} total \u00b7 ${openDeals.length} still open`}
+        actions={
+          deals.length > 0 ? (
+            <a
+              href="/api/export?type=deals"
+              download
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-border bg-surface text-fg-muted hover:bg-surface-2 transition-colors"
+            >
+              Export CSV
+            </a>
+          ) : undefined
+        }
       />
 
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">

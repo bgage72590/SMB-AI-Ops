@@ -5,6 +5,7 @@ import {
   PriorityBadge,
   StageBadge,
 } from "@/components/Badge";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import {
   Card,
   CardBody,
@@ -49,12 +50,12 @@ export default function ClientDetailPage({ params }: Props) {
   return (
     <div className="space-y-8">
       <div>
-        <Link
-          href="/contacts"
-          className="text-xs text-fg-subtle hover:text-fg-muted"
-        >
-          ← All clients
-        </Link>
+        <Breadcrumb
+          items={[
+            { label: "Clients", href: "/contacts" },
+            { label: contact.name },
+          ]}
+        />
         <PageHeader
           className="mt-2"
           eyebrow="Client"

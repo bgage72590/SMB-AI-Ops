@@ -38,3 +38,14 @@ export function formatRelative(iso: string): string {
   const months = Math.floor(days / 30);
   return `${months}mo ago`;
 }
+
+export function formatAbsolute(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

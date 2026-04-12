@@ -2,10 +2,17 @@ import Link from "next/link";
 import { UserMenu } from "./UserMenu";
 import { NavLinks, MobileMenu } from "./NavLinks";
 
+interface NavBadges {
+  inbox?: number;
+  followups?: number;
+}
+
 export function Nav({
   user,
+  badges,
 }: {
   user?: { name: string; email: string } | null;
+  badges?: NavBadges;
 }) {
   return (
     <header className="border-b border-border bg-surface">
@@ -26,8 +33,8 @@ export function Nav({
           </span>
         </Link>
         <div className="flex items-center gap-4">
-          {user && <NavLinks />}
-          {user && <MobileMenu />}
+          {user && <NavLinks badges={badges} />}
+          {user && <MobileMenu badges={badges} />}
           {user ? (
             <div className="flex items-center gap-3">
               <span
@@ -35,7 +42,7 @@ export function Nav({
                 title="Press Cmd-K or Ctrl-K to search"
               >
                 <span>Search</span>
-                <kbd className="font-mono">⌘K</kbd>
+                <kbd className="font-mono">{"\u2318"}K</kbd>
               </span>
               <UserMenu name={user.name} email={user.email} />
             </div>
