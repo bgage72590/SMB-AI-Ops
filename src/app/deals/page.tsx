@@ -5,6 +5,12 @@ import { getContact, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import type { DealStage } from "@/lib/types";
 import { requireUser } from "@/lib/auth";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Jobs | SMB AI Ops",
+  description: "Track your jobs through the pipeline.",
+};
 
 export const dynamic = "force-dynamic";
 

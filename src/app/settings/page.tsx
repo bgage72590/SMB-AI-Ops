@@ -7,6 +7,12 @@ import { checkUsageLimits } from "@/lib/plans";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { BillingActions } from "@/components/BillingActions";
 import { InboundAddressCard } from "@/components/InboundAddressCard";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Settings | SMB AI Ops",
+  description: "Configure your workspace.",
+};
 
 export default function SettingsPage() {
   let user;

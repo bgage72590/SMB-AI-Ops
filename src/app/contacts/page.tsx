@@ -12,6 +12,12 @@ import { StageBadge } from "@/components/Badge";
 import { listContacts, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Clients | SMB AI Ops",
+  description: "Manage your client book.",
+};
 
 export const dynamic = "force-dynamic";
 

@@ -12,6 +12,12 @@ import { formatRelative } from "@/lib/format";
 import { isPostmarkConfigured } from "@/lib/postmark";
 import { isTwilioConfigured } from "@/lib/twilio";
 import { requireUser } from "@/lib/auth";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Follow-ups | SMB AI Ops",
+  description: "Review and send AI-drafted follow-up emails.",
+};
 
 export const dynamic = "force-dynamic";
 
