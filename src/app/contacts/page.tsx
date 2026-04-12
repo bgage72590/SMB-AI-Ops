@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Pagination, paginate } from "@/components/Pagination";
 import { ContactSearch } from "@/components/ContactSearch";
+import { CsvImport } from "@/components/CsvImport";
 import { StageBadge } from "@/components/Badge";
 import { listContacts, listDeals } from "@/lib/store";
 import { formatCurrency, formatRelative } from "@/lib/format";
@@ -59,20 +60,22 @@ export default function ClientsPage({
             {allContacts.length} in your book &middot; {withOpenJob} with an open job
           </p>
         </div>
-        {allContacts.length > 0 && (
-          <a
-            href="/api/export?type=contacts"
-            download
-            className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-border bg-surface text-fg-muted hover:bg-surface-2 transition-colors shrink-0"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            Export CSV
-          </a>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {allContacts.length > 0 && (
+            <a
+              href="/api/export?type=contacts"
+              download
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-border bg-surface text-fg-muted hover:bg-surface-2 transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Export
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Search */}
@@ -86,12 +89,32 @@ export default function ClientsPage({
         </p>
       )}
 
+      {/* Import CSV */}
+      {!q && (
+        <details className="group rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] overflow-hidden">
+          <summary className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-surface-2/50 transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-fg-muted">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span className="text-sm font-medium text-fg">Import contacts from CSV</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-auto text-fg-subtle group-open:rotate-180 transition-transform">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </summary>
+          <div className="px-4 pb-4 pt-1">
+            <CsvImport />
+          </div>
+        </details>
+      )}
+
       {/* Empty state */}
       {contacts.length === 0 && !q && (
         <div className="rounded-xl border border-dashed border-border bg-surface py-14 text-center">
           <div className="text-sm font-medium text-fg">No clients yet</div>
           <p className="text-xs text-fg-subtle mt-1 max-w-xs mx-auto">
-            Process your inbox to pull the first few in &mdash; any real inbound email becomes a client record.
+            Process your inbox or import a CSV above to add your first clients.
           </p>
         </div>
       )}

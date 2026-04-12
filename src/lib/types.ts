@@ -183,6 +183,51 @@ export interface FollowUp {
   icsData?: string;
 }
 
+export type SmsDirection = "inbound" | "outbound";
+
+export interface SmsMessage {
+  id: string;
+  userId: string;
+  contactId?: string;
+  direction: SmsDirection;
+  fromNumber: string;
+  toNumber: string;
+  body: string;
+  twilioSid?: string;
+  status: string;
+  createdAt: string;
+}
+
+export type InvoiceType = "quote" | "invoice";
+export type InvoiceStatus = "draft" | "sent" | "accepted" | "declined" | "paid" | "void";
+
+export interface LineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface Invoice {
+  id: string;
+  userId: string;
+  dealId?: string;
+  contactId: string;
+  type: InvoiceType;
+  number: string;
+  status: InvoiceStatus;
+  lineItems: LineItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  notes?: string;
+  validUntil?: string;
+  paidAt?: string;
+  sentAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StoreShape {
   contacts: Contact[];
   deals: Deal[];

@@ -10,8 +10,14 @@ import type {
   EmailPriority,
   FollowUp,
   FollowUpChannel,
+  Invoice,
+  InvoiceStatus,
+  InvoiceType,
+  LineItem,
   PlanTier,
   Session,
+  SmsDirection,
+  SmsMessage,
   StoreShape,
   SubscriptionStatus,
   User,
@@ -306,6 +312,46 @@ function migrate(conn: Database.Database): void {
       updatedAt   TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(userId);
+
+    CREATE TABLE IF NOT EXISTS sms_messages (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      contactId   TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+      direction   TEXT NOT NULL,
+      fromNumber  TEXT NOT NULL,
+      toNumber    TEXT NOT NULL,
+      body        TEXT NOT NULL,
+      twilioSid   TEXT,
+      status      TEXT NOT NULL DEFAULT 'delivered',
+      createdAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sms_user ON sms_messages(userId);
+    CREATE INDEX IF NOT EXISTS idx_sms_contact ON sms_messages(contactId);
+    CREATE INDEX IF NOT EXISTS idx_sms_created ON sms_messages(createdAt);
+
+    CREATE TABLE IF NOT EXISTS invoices (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      dealId      TEXT REFERENCES deals(id) ON DELETE SET NULL,
+      contactId   TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+      type        TEXT NOT NULL DEFAULT 'quote',
+      number      TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'draft',
+      lineItems   TEXT NOT NULL DEFAULT '[]',
+      subtotal    REAL NOT NULL DEFAULT 0,
+      tax         REAL NOT NULL DEFAULT 0,
+      total       REAL NOT NULL DEFAULT 0,
+      notes       TEXT,
+      validUntil  TEXT,
+      paidAt      TEXT,
+      sentAt      TEXT,
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(userId);
+    CREATE INDEX IF NOT EXISTS idx_invoices_contact ON invoices(contactId);
+    CREATE INDEX IF NOT EXISTS idx_invoices_deal ON invoices(dealId);
+    CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
   `);
 
   provisionWorkspaces(conn);
@@ -2388,4 +2434,260 @@ export function deleteAutomation(userId: string, id: string): boolean {
     .prepare("DELETE FROM automations WHERE id = ? AND userId = ?")
     .run(id, userId);
   return result.changes > 0;
+}
+
+// ---------- Invoices / Quotes ----------
+
+function parseInvoiceRow(row: Record<string, unknown>): Invoice {
+  return {
+    ...row,
+    lineItems: JSON.parse((row.lineItems as string) || "[]"),
+  } as Invoice;
+}
+
+function nextInvoiceNumber(userId: string, type: InvoiceType): string {
+  const prefix = type === "quote" ? "Q" : "INV";
+  const count = db()
+    .prepare(
+      "SELECT COUNT(*) AS c FROM invoices WHERE userId = ? AND type = ?"
+    )
+    .get(userId, type) as { c: number };
+  return `${prefix}-${String(count.c + 1).padStart(4, "0")}`;
+}
+
+export function listInvoices(
+  userId: string,
+  opts?: { type?: InvoiceType; status?: InvoiceStatus }
+): Invoice[] {
+  let sql = "SELECT * FROM invoices WHERE userId = ?";
+  const params: unknown[] = [userId];
+  if (opts?.type) {
+    sql += " AND type = ?";
+    params.push(opts.type);
+  }
+  if (opts?.status) {
+    sql += " AND status = ?";
+    params.push(opts.status);
+  }
+  sql += " ORDER BY createdAt DESC";
+  const rows = db().prepare(sql).all(...params) as Record<string, unknown>[];
+  return rows.map(parseInvoiceRow);
+}
+
+export function getInvoice(userId: string, id: string): Invoice | undefined {
+  const row = db()
+    .prepare("SELECT * FROM invoices WHERE id = ? AND userId = ?")
+    .get(id, userId) as Record<string, unknown> | undefined;
+  return row ? parseInvoiceRow(row) : undefined;
+}
+
+export function getInvoicePublic(id: string): Invoice | undefined {
+  const row = db()
+    .prepare("SELECT * FROM invoices WHERE id = ?")
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? parseInvoiceRow(row) : undefined;
+}
+
+export function createInvoice(
+  userId: string,
+  input: {
+    type: InvoiceType;
+    contactId: string;
+    dealId?: string;
+    lineItems: LineItem[];
+    tax?: number;
+    notes?: string;
+    validUntil?: string;
+  }
+): Invoice {
+  const id = randomUUID();
+  const ts = now();
+  const number = nextInvoiceNumber(userId, input.type);
+  const subtotal = input.lineItems.reduce((s, li) => s + li.total, 0);
+  const tax = input.tax ?? 0;
+  const total = subtotal + tax;
+
+  db()
+    .prepare(
+      `INSERT INTO invoices (id, userId, dealId, contactId, type, number, status, lineItems, subtotal, tax, total, notes, validUntil, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      userId,
+      input.dealId || null,
+      input.contactId,
+      input.type,
+      number,
+      JSON.stringify(input.lineItems),
+      subtotal,
+      tax,
+      total,
+      input.notes || null,
+      input.validUntil || null,
+      ts,
+      ts
+    );
+
+  return getInvoice(userId, id)!;
+}
+
+export function updateInvoice(
+  userId: string,
+  id: string,
+  patch: {
+    status?: InvoiceStatus;
+    lineItems?: LineItem[];
+    tax?: number;
+    notes?: string;
+    validUntil?: string;
+    paidAt?: string;
+    sentAt?: string;
+  }
+): Invoice | undefined {
+  const existing = getInvoice(userId, id);
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+
+  if (patch.status !== undefined) {
+    sets.push("status = ?");
+    vals.push(patch.status);
+  }
+  if (patch.lineItems !== undefined) {
+    const subtotal = patch.lineItems.reduce((s, li) => s + li.total, 0);
+    const tax = patch.tax ?? existing.tax;
+    sets.push("lineItems = ?", "subtotal = ?", "tax = ?", "total = ?");
+    vals.push(JSON.stringify(patch.lineItems), subtotal, tax, subtotal + tax);
+  } else if (patch.tax !== undefined) {
+    sets.push("tax = ?", "total = ?");
+    vals.push(patch.tax, existing.subtotal + patch.tax);
+  }
+  if (patch.notes !== undefined) {
+    sets.push("notes = ?");
+    vals.push(patch.notes);
+  }
+  if (patch.validUntil !== undefined) {
+    sets.push("validUntil = ?");
+    vals.push(patch.validUntil);
+  }
+  if (patch.paidAt !== undefined) {
+    sets.push("paidAt = ?");
+    vals.push(patch.paidAt);
+  }
+  if (patch.sentAt !== undefined) {
+    sets.push("sentAt = ?");
+    vals.push(patch.sentAt);
+  }
+
+  vals.push(id, userId);
+  db()
+    .prepare(
+      `UPDATE invoices SET ${sets.join(", ")} WHERE id = ? AND userId = ?`
+    )
+    .run(...vals);
+
+  return getInvoice(userId, id);
+}
+
+// ---------- SMS Messages ----------
+
+export function listSmsMessages(
+  userId: string,
+  contactId?: string
+): SmsMessage[] {
+  if (contactId) {
+    return db()
+      .prepare(
+        "SELECT * FROM sms_messages WHERE userId = ? AND contactId = ? ORDER BY createdAt ASC"
+      )
+      .all(userId, contactId) as SmsMessage[];
+  }
+  return db()
+    .prepare("SELECT * FROM sms_messages WHERE userId = ? ORDER BY createdAt DESC")
+    .all(userId) as SmsMessage[];
+}
+
+export function listSmsConversations(userId: string): Array<{
+  contactId: string;
+  contactName: string;
+  contactPhone: string;
+  lastMessage: string;
+  lastAt: string;
+  unread: number;
+}> {
+  const rows = db()
+    .prepare(
+      `SELECT
+         m.contactId,
+         c.name AS contactName,
+         c.phone AS contactPhone,
+         m.body AS lastMessage,
+         m.createdAt AS lastAt,
+         0 AS unread
+       FROM sms_messages m
+       JOIN contacts c ON c.id = m.contactId
+       WHERE m.userId = ?
+         AND m.createdAt = (
+           SELECT MAX(m2.createdAt) FROM sms_messages m2
+           WHERE m2.userId = m.userId AND m2.contactId = m.contactId
+         )
+       ORDER BY m.createdAt DESC`
+    )
+    .all(userId) as Array<{
+    contactId: string;
+    contactName: string;
+    contactPhone: string;
+    lastMessage: string;
+    lastAt: string;
+    unread: number;
+  }>;
+  return rows;
+}
+
+export function createSmsMessage(input: {
+  userId: string;
+  contactId?: string;
+  direction: SmsDirection;
+  fromNumber: string;
+  toNumber: string;
+  body: string;
+  twilioSid?: string;
+  status?: string;
+}): SmsMessage {
+  const id = randomUUID();
+  const ts = now();
+  db()
+    .prepare(
+      `INSERT INTO sms_messages (id, userId, contactId, direction, fromNumber, toNumber, body, twilioSid, status, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.userId,
+      input.contactId || null,
+      input.direction,
+      input.fromNumber,
+      input.toNumber,
+      input.body,
+      input.twilioSid || null,
+      input.status || "delivered",
+      ts
+    );
+  return db()
+    .prepare("SELECT * FROM sms_messages WHERE id = ?")
+    .get(id) as SmsMessage;
+}
+
+export function findContactByPhone(
+  userId: string,
+  phone: string
+): Contact | undefined {
+  const normalized = phone.replace(/[^+\d]/g, "");
+  const contacts = listContacts(userId);
+  return contacts.find((c) => {
+    if (!c.phone) return false;
+    return c.phone.replace(/[^+\d]/g, "") === normalized;
+  });
 }

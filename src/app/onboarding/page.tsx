@@ -16,7 +16,10 @@ export default function OnboardingPage() {
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-12">
-      <OnboardingWizard inboundAddress={user.inboundAddress} />
+      <OnboardingWizard
+        inboundAddress={user.inboundAddress}
+        userName={user.name}
+      />
     </main>
   );
 }
