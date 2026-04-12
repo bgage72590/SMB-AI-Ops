@@ -11,6 +11,12 @@ import {
   PageHeader,
   StatCard,
 } from "@/components/ui";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Reports | SMB AI Ops",
+  description: "Pipeline analytics and revenue forecasting.",
+};
 
 export const dynamic = "force-dynamic";
 

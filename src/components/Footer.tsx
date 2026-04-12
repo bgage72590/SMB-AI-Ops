@@ -1,12 +1,14 @@
 import Link from "next/link";
+import { WhatsNew } from "./WhatsNew";
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-surface mt-auto">
+    <footer className="border-t border-border bg-surface mt-auto no-print">
       <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-fg-subtle">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-3">
           <span className="font-semibold text-fg-muted">SMB AI Ops</span>
           <span>v0.1.0</span>
+          <WhatsNew />
         </div>
         <div className="flex items-center gap-4">
           <Link href="/settings" className="hover:text-fg transition-colors">

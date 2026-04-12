@@ -16,6 +16,12 @@ import { listEmails } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
 import type { Email, EmailCategory } from "@/lib/types";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Inbox | SMB AI Ops",
+  description: "Triage and manage inbound emails with AI.",
+};
 
 export const dynamic = "force-dynamic";
 
