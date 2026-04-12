@@ -3,13 +3,22 @@ import {
   claimNextJob,
   completeJob,
   countPendingJobs,
+  createFollowUp,
   enqueueJob,
   failJob,
+  findOpenDealForContact,
+  getContact,
+  getDeal,
   getEmail,
+  listDeals,
   listEmails,
+  listUsers,
+  logAudit,
   type Job,
 } from "./store";
 import { processEmail } from "./pipeline";
+import { draftFollowUp } from "./ai";
+import { OPEN_DEAL_STAGES } from "./types";
 
 // Background job queue. Every long-ish piece of work the product needs
 // to do outside a request/response cycle lives here.
@@ -30,11 +39,16 @@ import { processEmail } from "./pipeline";
 const DEFAULT_BATCH = 10;
 const DEFAULT_BATCH_TIMEOUT_MS = 50_000; // leave headroom under 60s platform cap
 
-export type JobType = "process_email";
+export type JobType = "process_email" | "deal_decay_nudge";
 
 const PROCESS_EMAIL_PAYLOAD = z.object({
   userId: z.string(),
   emailId: z.string(),
+});
+
+const DEAL_DECAY_PAYLOAD = z.object({
+  userId: z.string(),
+  dealId: z.string(),
 });
 
 interface RunJobsResult {
@@ -101,6 +115,35 @@ async function dispatch(job: Job): Promise<void> {
       await processEmail(parsed.userId, email);
       return;
     }
+    case "deal_decay_nudge": {
+      const parsed = DEAL_DECAY_PAYLOAD.parse(job.payload);
+      const deal = getDeal(parsed.userId, parsed.dealId);
+      if (!deal) return;
+      if (deal.stage === "completed" || deal.stage === "lost") return;
+      const contact = getContact(parsed.userId, deal.contactId);
+      if (!contact) return;
+      const draft = await draftFollowUp({
+        contact,
+        deal,
+        context: `This deal has been quiet for several days. Draft a friendly check-in to keep things moving.`,
+        userId: parsed.userId,
+      });
+      createFollowUp(parsed.userId, {
+        contactId: contact.id,
+        dealId: deal.id,
+        subject: draft.subject,
+        draft: draft.body,
+        reason: `Deal "${deal.title}" has gone cold — auto-nudge`,
+      });
+      logAudit(
+        parsed.userId,
+        "decay_nudge",
+        "deal",
+        deal.id,
+        `Auto-drafted nudge for "${deal.title}"`
+      );
+      return;
+    }
     default:
       throw new Error(`Unknown job type: ${job.type}`);
   }
@@ -127,4 +170,35 @@ export function enqueueUnprocessedEmails(userId: string): number {
     enqueueEmailProcessing(userId, email.id);
   }
   return pending.length;
+}
+
+const DECAY_THRESHOLD_MS = 5 * 24 * 60 * 60 * 1000;
+
+/**
+ * Scan all users for open deals with no activity in the last N days and
+ * enqueue a follow-up draft for each. Called from the daily cron endpoint.
+ * Returns the total number of nudge jobs enqueued.
+ */
+export function enqueueDecayNudges(): number {
+  const users = listUsers();
+  let count = 0;
+  const cutoff = new Date(Date.now() - DECAY_THRESHOLD_MS).toISOString();
+
+  for (const user of users) {
+    const deals = listDeals(user.id);
+    const stale = deals.filter(
+      (d) =>
+        (OPEN_DEAL_STAGES as readonly string[]).includes(d.stage) &&
+        d.lastActivityAt < cutoff
+    );
+    for (const deal of stale) {
+      enqueueJob({
+        type: "deal_decay_nudge",
+        userId: user.id,
+        payload: { userId: user.id, dealId: deal.id },
+      });
+      count++;
+    }
+  }
+  return count;
 }

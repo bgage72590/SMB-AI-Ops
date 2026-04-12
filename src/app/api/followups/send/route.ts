@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getContact, getFollowUp, updateFollowUp } from "@/lib/store";
+import { getContact, getFollowUp, logAudit, updateFollowUp } from "@/lib/store";
 import { isPostmarkConfigured, sendEmail } from "@/lib/postmark";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { trialGuardResponse } from "@/lib/trialGuard";
@@ -71,6 +71,7 @@ export async function POST(request: Request) {
       sentAt: new Date().toISOString(),
       sentMessageId: result.messageId,
     });
+    logAudit(user.id, "sent", "followUp", followUp.id, `To: ${contact.email}`);
     return NextResponse.json({ followUp: updated, messageId: result.messageId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "send_failed";
