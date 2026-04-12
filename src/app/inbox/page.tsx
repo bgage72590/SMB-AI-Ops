@@ -11,6 +11,7 @@ import {
   EmptyState,
   PageHeader,
 } from "@/components/ui";
+import { Pagination, paginate } from "@/components/Pagination";
 import { listEmails } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
 import { requireUser } from "@/lib/auth";
@@ -33,10 +34,12 @@ function applyFilter(emails: Email[], filter: Filter): Email[] {
   return emails.filter((e) => e.category === (filter as EmailCategory));
 }
 
+const PER_PAGE = 20;
+
 export default function InboxPage({
   searchParams,
 }: {
-  searchParams?: { filter?: string };
+  searchParams?: { filter?: string; page?: string };
 }) {
   const user = requireUser();
   const emails = listEmails(user.id);
@@ -54,16 +57,22 @@ export default function InboxPage({
   const showUnprocessed = activeFilter !== "deal_update";
   const showProcessed = activeFilter !== "unprocessed";
 
+  const page = parseInt(searchParams?.page || "1", 10);
+  const paginatedProcessed = paginate(filteredProcessed, page, PER_PAGE);
+
+  const filterParams: Record<string, string> = {};
+  if (activeFilter !== "all") filterParams.filter = activeFilter;
+
   return (
     <div className="space-y-8">
       <PageHeader
         eyebrow="Inbox"
         title="Inbox"
-        description={`${unprocessed.length} waiting · ${processed.length} triaged by AI`}
+        description={`${unprocessed.length} waiting \u00b7 ${processed.length} triaged by AI`}
         actions={<ProcessButton />}
       />
 
-      {/* Filter chips — server-driven via ?filter= search param. */}
+      {/* Filter chips */}
       <div className="flex items-center gap-2 flex-wrap">
         {FILTERS.map((f) => {
           const isActive = f.id === activeFilter;
@@ -89,7 +98,7 @@ export default function InboxPage({
         <Card>
           <CardBody>
             <EmptyState
-              icon="📬"
+              icon="\ud83d\udcec"
               title="Your inbox is empty"
               description="Once inbound email is routed in (or once the seed is loaded), messages will appear here for the AI to triage."
               action={<ProcessButton label="Process inbox" />}
@@ -107,7 +116,7 @@ export default function InboxPage({
                 ? "Nothing waiting"
                 : `${filteredUnprocessed.length} message${
                     filteredUnprocessed.length === 1 ? "" : "s"
-                  } the AI hasn't looked at yet`
+                  } the AI hasn\u2019t looked at yet`
             }
             action={
               filteredUnprocessed.length > 0 ? (
@@ -120,7 +129,7 @@ export default function InboxPage({
           <CardBody>
             {filteredUnprocessed.length === 0 ? (
               <EmptyState
-                icon="✓"
+                icon="\u2713"
                 title="All clear"
                 description="Every message in this view has been triaged."
               />
@@ -184,44 +193,52 @@ export default function InboxPage({
           <CardBody>
             {filteredProcessed.length === 0 ? (
               <EmptyState
-                icon="✨"
+                icon="\u2728"
                 title="Nothing here yet"
                 description="As the AI processes inbound mail, it shows up here with a category + priority chip."
               />
             ) : (
-              <ul className="divide-y divide-border">
-                {filteredProcessed.map((email) => (
-                  <li
-                    key={email.id}
-                    className="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-4"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {email.category && (
-                          <CategoryBadge category={email.category} />
-                        )}
-                        {email.priority && (
-                          <PriorityBadge priority={email.priority} />
-                        )}
-                      </div>
-                      <div className="text-sm font-medium text-fg mt-1.5 truncate">
-                        {email.fromName || email.from}
-                      </div>
-                      <div className="text-xs text-fg-muted truncate">
-                        {email.subject}
-                      </div>
-                      {email.summary && (
-                        <div className="text-xs text-fg-subtle mt-1 italic line-clamp-2">
-                          &ldquo;{email.summary}&rdquo;
+              <>
+                <ul className="divide-y divide-border">
+                  {paginatedProcessed.items.map((email) => (
+                    <li
+                      key={email.id}
+                      className="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-4"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {email.category && (
+                            <CategoryBadge category={email.category} />
+                          )}
+                          {email.priority && (
+                            <PriorityBadge priority={email.priority} />
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-fg-subtle whitespace-nowrap shrink-0">
-                      {formatRelative(email.receivedAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                        <div className="text-sm font-medium text-fg mt-1.5 truncate">
+                          {email.fromName || email.from}
+                        </div>
+                        <div className="text-xs text-fg-muted truncate">
+                          {email.subject}
+                        </div>
+                        {email.summary && (
+                          <div className="text-xs text-fg-subtle mt-1 italic line-clamp-2">
+                            &ldquo;{email.summary}&rdquo;
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-fg-subtle whitespace-nowrap shrink-0">
+                        {formatRelative(email.receivedAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <Pagination
+                  currentPage={paginatedProcessed.currentPage}
+                  totalPages={paginatedProcessed.totalPages}
+                  basePath="/inbox"
+                  searchParams={filterParams}
+                />
+              </>
             )}
           </CardBody>
         </Card>

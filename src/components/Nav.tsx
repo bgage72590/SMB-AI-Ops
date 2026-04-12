@@ -1,14 +1,6 @@
 import Link from "next/link";
 import { UserMenu } from "./UserMenu";
-
-const LINKS: Array<{ href: string; label: string }> = [
-  { href: "/", label: "Dashboard" },
-  { href: "/inbox", label: "Inbox" },
-  { href: "/deals", label: "Jobs" },
-  { href: "/contacts", label: "Clients" },
-  { href: "/followups", label: "Follow-ups" },
-  { href: "/reports", label: "Reports" },
-];
+import { NavLinks, MobileMenu } from "./NavLinks";
 
 export function Nav({
   user,
@@ -17,6 +9,12 @@ export function Nav({
 }) {
   return (
     <header className="border-b border-border bg-surface">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[300] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-accent focus:text-accent-fg focus:text-sm focus:font-medium"
+      >
+        Skip to content
+      </a>
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-2">
           <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-accent text-accent-fg font-bold">
@@ -28,19 +26,8 @@ export function Nav({
           </span>
         </Link>
         <div className="flex items-center gap-4">
-          {user && (
-            <nav className="flex items-center gap-1 text-sm">
-              {LINKS.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="px-3 py-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-surface-2"
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-          )}
+          {user && <NavLinks />}
+          {user && <MobileMenu />}
           {user ? (
             <div className="flex items-center gap-3">
               <span

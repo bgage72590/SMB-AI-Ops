@@ -161,10 +161,15 @@ export function CommandPalette({ enabled }: { enabled: boolean }) {
             onKeyDown={onInputKeyDown}
             placeholder="Search clients, jobs, emails, follow-ups…"
             className="w-full text-sm outline-none bg-transparent text-fg placeholder:text-fg-subtle"
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls="cmd-palette-results"
+            aria-activedescendant={results.length > 0 ? `cmd-result-${active}` : undefined}
+            aria-autocomplete="list"
           />
         </div>
 
-        <div className="max-h-[50vh] overflow-y-auto">
+        <div id="cmd-palette-results" role="listbox" aria-label="Search results" className="max-h-[50vh] overflow-y-auto">
           {query.trim().length < 2 && (
             <div className="px-4 py-6 text-xs text-fg-subtle">
               Type at least 2 characters. Use{" "}
@@ -183,6 +188,9 @@ export function CommandPalette({ enabled }: { enabled: boolean }) {
           {results.map((r, i) => (
             <button
               key={`${r.kind}:${r.id}`}
+              id={`cmd-result-${i}`}
+              role="option"
+              aria-selected={i === active}
               onMouseEnter={() => setActive(i)}
               onClick={() => onSelect(r)}
               className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors ${

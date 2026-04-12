@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui";
+import { useToast } from "./Toast";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Entry {
   id: string;
@@ -17,11 +19,13 @@ export function BlocklistManager({
   initialEntries: Entry[];
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [entries, setEntries] = useState(initialEntries);
   const [pattern, setPattern] = useState("");
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<Entry | null>(null);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -41,9 +45,12 @@ export function BlocklistManager({
       const { entry } = await res.json();
       setEntries((prev) => [entry, ...prev]);
       setPattern("");
+      toast("Sender blocked", "success");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed");
+      const msg = err instanceof Error ? err.message : "failed";
+      setError(msg);
+      toast(msg, "error");
     } finally {
       setAdding(false);
     }
@@ -63,9 +70,12 @@ export function BlocklistManager({
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       setEntries((prev) => prev.filter((e) => e.id !== id));
+      toast("Entry removed from blocklist", "success");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed");
+      const msg = err instanceof Error ? err.message : "failed";
+      setError(msg);
+      toast(msg, "error");
     } finally {
       setRemoving(null);
     }
@@ -117,7 +127,7 @@ export function BlocklistManager({
               </div>
               <button
                 type="button"
-                onClick={() => handleRemove(entry.id)}
+                onClick={() => setConfirmRemove(entry)}
                 disabled={removing === entry.id}
                 className="shrink-0 text-xs text-danger hover:underline disabled:opacity-50"
               >
@@ -127,6 +137,26 @@ export function BlocklistManager({
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        title="Remove from blocklist?"
+        message={
+          confirmRemove
+            ? `Remove "${confirmRemove.pattern}" from the blocklist? Emails from this sender will be processed again.`
+            : ""
+        }
+        confirmLabel="Remove"
+        variant="danger"
+        loading={removing !== null}
+        onConfirm={() => {
+          if (confirmRemove) {
+            handleRemove(confirmRemove.id);
+            setConfirmRemove(null);
+          }
+        }}
+        onCancel={() => setConfirmRemove(null)}
+      />
     </div>
   );
 }
