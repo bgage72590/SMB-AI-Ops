@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui";
+import { useToast } from "./Toast";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Member {
   id: string;
@@ -25,10 +27,12 @@ interface Props {
 
 export function TeamManager({ members, pendingInvites, isOwner }: Props) {
   const router = useRouter();
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<Member | null>(null);
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -46,9 +50,12 @@ export function TeamManager({ members, pendingInvites, isOwner }: Props) {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       setEmail("");
+      toast("Invite sent", "success");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed");
+      const msg = err instanceof Error ? err.message : "failed";
+      setError(msg);
+      toast(msg, "error");
     } finally {
       setInviting(false);
     }
@@ -67,9 +74,12 @@ export function TeamManager({ members, pendingInvites, isOwner }: Props) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `HTTP ${res.status}`);
       }
+      toast("Member removed", "success");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed");
+      const msg = err instanceof Error ? err.message : "failed";
+      setError(msg);
+      toast(msg, "error");
     } finally {
       setRemoving(null);
     }
@@ -122,7 +132,7 @@ export function TeamManager({ members, pendingInvites, isOwner }: Props) {
               {isOwner && !m.isOwner && (
                 <button
                   type="button"
-                  onClick={() => handleRemove(m.id)}
+                  onClick={() => setConfirmRemove(m)}
                   disabled={removing === m.id}
                   className="shrink-0 text-xs text-danger hover:underline disabled:opacity-50"
                 >
@@ -163,6 +173,26 @@ export function TeamManager({ members, pendingInvites, isOwner }: Props) {
           Only the workspace owner can invite or remove members.
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        title="Remove team member?"
+        message={
+          confirmRemove
+            ? `Are you sure you want to remove ${confirmRemove.name} (${confirmRemove.email}) from your workspace?`
+            : ""
+        }
+        confirmLabel="Remove"
+        variant="danger"
+        loading={removing !== null}
+        onConfirm={() => {
+          if (confirmRemove) {
+            handleRemove(confirmRemove.id);
+            setConfirmRemove(null);
+          }
+        }}
+        onCancel={() => setConfirmRemove(null)}
+      />
     </div>
   );
 }

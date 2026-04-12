@@ -8,9 +8,6 @@ import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// Left-to-right: the lifecycle a local-service job moves through.
-// `completed` and `lost` are terminal columns we still render so the
-// owner can glance at the week's won/lost work.
 const COLUMNS: Array<{ stage: DealStage; label: string }> = [
   { stage: "inquiry", label: "Inquiries" },
   { stage: "quoted", label: "Quoted" },
@@ -20,7 +17,11 @@ const COLUMNS: Array<{ stage: DealStage; label: string }> = [
   { stage: "lost", label: "Lost" },
 ];
 
-export default function JobsPage() {
+export default function JobsPage({
+  searchParams,
+}: {
+  searchParams?: { stage?: string };
+}) {
   const user = requireUser();
   const deals = listDeals(user.id);
   const byStage: Record<DealStage, typeof deals> = {
@@ -43,12 +44,15 @@ export default function JobsPage() {
     0
   );
 
+  const mobileStageFilter = searchParams?.stage as DealStage | undefined;
+  const validFilter = mobileStageFilter && COLUMNS.some((c) => c.stage === mobileStageFilter);
+
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Pipeline"
         title="Jobs"
-        description={`${deals.length} total · ${openDeals.length} still open`}
+        description={`${deals.length} total \u00b7 ${openDeals.length} still open`}
       />
 
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -60,7 +64,7 @@ export default function JobsPage() {
         <StatCard
           label="Booked"
           value={formatCurrency(bookedValue)}
-          hint={byStage.completed.length > 0 ? `${formatCurrency(bookedProfit)} profit · ${byStage.completed.length} completed` : "0 completed"}
+          hint={byStage.completed.length > 0 ? `${formatCurrency(bookedProfit)} profit \u00b7 ${byStage.completed.length} completed` : "0 completed"}
         />
         <StatCard
           label="Scheduled"
@@ -74,7 +78,83 @@ export default function JobsPage() {
         />
       </section>
 
-      <div className="grid md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* Mobile stage filter */}
+      <div className="md:hidden flex items-center gap-2 overflow-x-auto pb-1 -mx-4 px-4">
+        <Link
+          href="/deals"
+          className={
+            "shrink-0 inline-flex items-center h-8 px-3 rounded-full text-xs font-medium border transition-colors " +
+            (!validFilter
+              ? "bg-accent text-accent-fg border-accent"
+              : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
+          }
+        >
+          All
+        </Link>
+        {COLUMNS.map(({ stage, label }) => (
+          <Link
+            key={stage}
+            href={`/deals?stage=${stage}`}
+            className={
+              "shrink-0 inline-flex items-center h-8 px-3 rounded-full text-xs font-medium border transition-colors " +
+              (mobileStageFilter === stage
+                ? "bg-accent text-accent-fg border-accent"
+                : "bg-surface text-fg-muted border-border hover:text-fg hover:bg-surface-2")
+            }
+          >
+            {label} ({byStage[stage].length})
+          </Link>
+        ))}
+      </div>
+
+      {/* Mobile card list (filtered by stage) */}
+      <div className="md:hidden space-y-3">
+        {(validFilter ? [{ stage: mobileStageFilter!, label: COLUMNS.find(c => c.stage === mobileStageFilter)!.label }] : COLUMNS)
+          .filter(({ stage }) => byStage[stage].length > 0)
+          .map(({ stage, label }) => (
+            <div key={stage}>
+              {!validFilter && (
+                <div className="flex items-center gap-2 mb-2">
+                  <StageBadge stage={stage} />
+                  <span className="text-xs text-fg-subtle">
+                    {byStage[stage].length} \u00b7 {formatCurrency(byStage[stage].reduce((s, d) => s + d.amount, 0))}
+                  </span>
+                </div>
+              )}
+              <ul className="space-y-2">
+                {byStage[stage].map((deal) => {
+                  const contact = getContact(user.id, deal.contactId);
+                  return (
+                    <li key={deal.id}>
+                      <Link
+                        href={`/deals/${deal.id}`}
+                        className="block rounded-lg border border-border p-3 bg-surface hover:border-accent/40 transition"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-medium text-sm text-fg truncate">{deal.title}</div>
+                            <div className="text-xs text-fg-muted truncate mt-0.5">{contact?.name || "\u2014"}</div>
+                          </div>
+                          <span className="text-xs font-semibold text-fg tabular-nums shrink-0">
+                            {formatCurrency(deal.amount, deal.currency)}
+                          </span>
+                        </div>
+                        {deal.nextStep && (
+                          <div className="text-[11px] text-fg-muted mt-2 line-clamp-2 border-t border-border pt-1.5">
+                            \u2192 {deal.nextStep}
+                          </div>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+      </div>
+
+      {/* Desktop kanban board */}
+      <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-6 gap-4">
         {COLUMNS.map(({ stage, label }) => {
           const column = byStage[stage];
           const total = column.reduce((s, d) => s + d.amount, 0);
@@ -112,7 +192,7 @@ export default function JobsPage() {
                           {deal.title}
                         </div>
                         <div className="text-xs text-fg-muted truncate mt-0.5">
-                          {contact?.name || "—"}
+                          {contact?.name || "\u2014"}
                         </div>
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-xs font-semibold text-fg tabular-nums">
@@ -124,7 +204,7 @@ export default function JobsPage() {
                         </div>
                         {deal.nextStep && (
                           <div className="text-[11px] text-fg-muted mt-1.5 line-clamp-2 border-t border-border pt-1.5">
-                            → {deal.nextStep}
+                            \u2192 {deal.nextStep}
                           </div>
                         )}
                       </Link>

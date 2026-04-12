@@ -129,3 +129,23 @@ body {
 .dark ::-webkit-scrollbar-track {
   background: hsl(var(--bg));
 }
+
+/* Toast slide-in animation. */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out;
+}
+
+/* Dialog backdrop override for dark mode. */
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
