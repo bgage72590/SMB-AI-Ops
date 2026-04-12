@@ -103,7 +103,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader title="More settings" />
         <CardBody>
-          <nav className="grid gap-2 sm:grid-cols-3">
+          <nav className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Link
               href="/settings/usage"
               className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
@@ -129,6 +129,24 @@ export default function SettingsPage() {
               <h3 className="font-medium text-sm text-fg">Audit log</h3>
               <p className="text-xs text-fg-muted mt-1">
                 Timeline of every AI action
+              </p>
+            </Link>
+            <Link
+              href="/settings/calendar"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Calendar</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Google Calendar for smart scheduling
+              </p>
+            </Link>
+            <Link
+              href="/settings/team"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Team</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Invite a second owner to your workspace
               </p>
             </Link>
           </nav>

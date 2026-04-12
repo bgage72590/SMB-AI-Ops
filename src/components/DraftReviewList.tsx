@@ -13,6 +13,7 @@ interface DraftData {
   reason: string;
   createdAt: string;
   hasIcs: boolean;
+  channel?: "email" | "sms";
 }
 
 interface Props {

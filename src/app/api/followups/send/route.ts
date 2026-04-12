@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getContact, getFollowUp, logAudit, updateFollowUp } from "@/lib/store";
 import { isPostmarkConfigured, sendEmail } from "@/lib/postmark";
+import { isTwilioConfigured, sendSms } from "@/lib/twilio";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { trialGuardResponse } from "@/lib/trialGuard";
 
@@ -12,9 +13,8 @@ const SendSchema = z.object({ id: z.string().min(1) });
 // POST /api/followups/send
 // Body: { id: string }
 //
-// Actually dispatches the drafted follow-up via Postmark, then marks the
-// follow-up as "sent". If Postmark isn't configured, returns 412 so the UI
-// can point the user at the setup docs.
+// Dispatches the follow-up via the appropriate channel (email or SMS).
+// Email goes through Postmark; SMS goes through Twilio.
 export async function POST(request: Request) {
   let user;
   try {
@@ -35,17 +35,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "validation_failed" }, { status: 400 });
   }
 
-  if (!isPostmarkConfigured()) {
-    return NextResponse.json(
-      {
-        error: "postmark_not_configured",
-        message:
-          "Set POSTMARK_SERVER_TOKEN and POSTMARK_FROM_EMAIL in .env to enable sending.",
-      },
-      { status: 412 }
-    );
-  }
-
   const followUp = getFollowUp(user.id, parsed.data.id);
   if (!followUp) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -57,6 +46,49 @@ export async function POST(request: Request) {
   const contact = getContact(user.id, followUp.contactId);
   if (!contact) {
     return NextResponse.json({ error: "contact_not_found" }, { status: 404 });
+  }
+
+  if (followUp.channel === "sms") {
+    if (!isTwilioConfigured()) {
+      return NextResponse.json(
+        {
+          error: "twilio_not_configured",
+          message:
+            "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER in .env to enable SMS.",
+        },
+        { status: 412 }
+      );
+    }
+    if (!contact.phone) {
+      return NextResponse.json(
+        { error: "no_phone", message: "Contact has no phone number on file." },
+        { status: 422 }
+      );
+    }
+    try {
+      const result = await sendSms({ to: contact.phone, body: followUp.draft });
+      const updated = updateFollowUp(user.id, followUp.id, {
+        status: "sent",
+        sentAt: new Date().toISOString(),
+        sentMessageId: result.messageSid,
+      });
+      logAudit(user.id, "sent_sms", "followUp", followUp.id, `To: ${contact.phone}`);
+      return NextResponse.json({ followUp: updated, messageSid: result.messageSid });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "send_failed";
+      return NextResponse.json({ error: "send_failed", message }, { status: 502 });
+    }
+  }
+
+  if (!isPostmarkConfigured()) {
+    return NextResponse.json(
+      {
+        error: "postmark_not_configured",
+        message:
+          "Set POSTMARK_SERVER_TOKEN and POSTMARK_FROM_EMAIL in .env to enable sending.",
+      },
+      { status: 412 }
+    );
   }
 
   try {

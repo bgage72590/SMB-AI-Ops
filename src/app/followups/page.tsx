@@ -10,6 +10,7 @@ import {
 import { getContact, getDeal, listFollowUps } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
 import { isPostmarkConfigured } from "@/lib/postmark";
+import { isTwilioConfigured } from "@/lib/twilio";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export default function FollowUpsPage() {
   const drafts = followUps.filter((f) => f.status === "draft");
   const rest = followUps.filter((f) => f.status !== "draft");
   const canSend = isPostmarkConfigured();
+  const canSendSms = isTwilioConfigured();
 
   const draftData = drafts.map((f) => {
     const contact = getContact(user.id, f.contactId);
@@ -34,6 +36,7 @@ export default function FollowUpsPage() {
       reason: f.reason,
       createdAt: formatRelative(f.createdAt),
       hasIcs: !!f.icsData,
+      channel: f.channel ?? "email",
     };
   });
 
@@ -84,14 +87,20 @@ export default function FollowUpsPage() {
                       </div>
                       <div className="text-xs text-fg-subtle">
                         {contact?.name || "—"} · {formatRelative(f.createdAt)}
+                        {f.channel === "sms" && (
+                          <span className="ml-1.5 inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
+                            SMS
+                          </span>
+                        )}
                       </div>
                     </div>
                     <FollowUpActions
                       id={f.id}
                       currentStatus={f.status}
-                      canSend={canSend}
+                      canSend={f.channel === "sms" ? canSendSms : canSend}
                       sentAt={f.sentAt}
                       hasIcs={!!f.icsData}
+                      channel={f.channel}
                     />
                   </li>
                 );

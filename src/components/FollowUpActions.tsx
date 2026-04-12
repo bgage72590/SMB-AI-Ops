@@ -11,9 +11,10 @@ interface Props {
   canSend: boolean;
   sentAt?: string;
   hasIcs?: boolean;
+  channel?: "email" | "sms";
 }
 
-export function FollowUpActions({ id, currentStatus, canSend, sentAt, hasIcs }: Props) {
+export function FollowUpActions({ id, currentStatus, canSend, sentAt, hasIcs, channel = "email" }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export function FollowUpActions({ id, currentStatus, canSend, sentAt, hasIcs }: 
         className="text-xs text-success font-medium"
         title={sentAt ? new Date(sentAt).toLocaleString() : undefined}
       >
-        Sent{sentAt ? ` ${formatRelative(sentAt)}` : ""}
+        {channel === "sms" ? "SMS sent" : "Sent"}{sentAt ? ` ${formatRelative(sentAt)}` : ""}
       </span>
     );
   }
@@ -95,9 +96,9 @@ export function FollowUpActions({ id, currentStatus, canSend, sentAt, hasIcs }: 
             onClick={dispatchSend}
             loading={loading === "send"}
             disabled={loading !== null}
-            title="Send via Postmark"
+            title={channel === "sms" ? "Send via Twilio SMS" : "Send via Postmark"}
           >
-            {loading === "send" ? "Sending…" : "Send"}
+            {loading === "send" ? "Sending…" : channel === "sms" ? "Send SMS" : "Send"}
           </Button>
         ) : (
           <Button

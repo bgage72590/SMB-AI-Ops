@@ -17,6 +17,7 @@ interface Props {
   hasIcs: boolean;
   isFocused: boolean;
   onFocus: () => void;
+  channel?: "email" | "sms";
 }
 
 export function DraftReviewCard({
@@ -32,6 +33,7 @@ export function DraftReviewCard({
   hasIcs,
   isFocused,
   onFocus,
+  channel = "email",
 }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -195,6 +197,11 @@ export function DraftReviewCard({
             {dealTitle && (
               <span className="ml-2 text-fg-muted">· {dealTitle}</span>
             )}
+            {channel === "sms" && (
+              <span className="ml-1.5 inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
+                SMS
+              </span>
+            )}
           </div>
 
           {/* Subject */}
@@ -282,7 +289,7 @@ export function DraftReviewCard({
                 {loading === "send"
                   ? "Sending..."
                   : canSend
-                  ? "Approve & send"
+                  ? channel === "sms" ? "Approve & text" : "Approve & send"
                   : "Mark sent"}
               </Button>
               <Button
