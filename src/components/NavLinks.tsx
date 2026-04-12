@@ -36,7 +36,7 @@ export function NavLinks({ badges }: { badges?: NavBadges }) {
   const pathname = usePathname();
 
   return (
-    <nav className="hidden md:flex items-center gap-1 text-sm">
+    <nav className="hidden md:flex items-center gap-0.5 text-[13px]">
       {LINKS.map((link) => {
         const active = isActive(pathname, link.href);
         const badgeCount = link.badgeKey && badges ? badges[link.badgeKey] ?? 0 : 0;
@@ -46,8 +46,8 @@ export function NavLinks({ badges }: { badges?: NavBadges }) {
             href={link.href}
             className={
               active
-                ? "px-3 py-1.5 rounded-md text-accent font-medium bg-accent-soft"
-                : "px-3 py-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-surface-2"
+                ? "px-2.5 py-1.5 rounded-md text-accent font-medium bg-accent/10"
+                : "px-2.5 py-1.5 rounded-md text-fg-muted hover:text-fg hover:bg-surface-2 transition-colors"
             }
             aria-current={active ? "page" : undefined}
           >
