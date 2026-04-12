@@ -4,13 +4,6 @@ import { requireUser } from "@/lib/auth";
 import { generatePipelineReport } from "@/lib/reports";
 import { formatCurrency } from "@/lib/format";
 import { StageBadge } from "@/components/Badge";
-import {
-  Card,
-  CardBody,
-  CardHeader,
-  PageHeader,
-  StatCard,
-} from "@/components/ui";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -33,65 +26,55 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Analytics"
-        title="Pipeline Reports"
-        description="Weighted pipeline, win rate, and deals at risk"
-      />
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-semibold text-fg">Reports</h1>
+        <p className="text-sm text-fg-muted mt-0.5">
+          Pipeline analytics, win rate, and revenue forecast
+        </p>
+      </div>
 
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          label="Total pipeline"
-          value={formatCurrency(report.totalPipeline)}
-          hint="open jobs value"
-        />
-        <StatCard
-          label="Weighted pipeline"
-          value={formatCurrency(report.weightedPipeline)}
-          hint="probability-adjusted"
-        />
-        <StatCard
-          label="Win rate (90d)"
-          value={`${Math.round(wr.winRate * 100)}%`}
-          hint={`${wr.won} won / ${wr.lost} lost`}
-        />
-        <StatCard
-          label="Monthly forecast"
-          value={formatCurrency(report.forecastMonthly)}
-          hint="based on velocity + pipeline"
-        />
+      {/* Key metrics */}
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
+          <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-medium">Total pipeline</div>
+          <div className="mt-1.5 text-2xl font-semibold text-fg tabular-nums">{formatCurrency(report.totalPipeline)}</div>
+          <div className="text-[11px] text-fg-subtle mt-1">
+            {formatCurrency(report.weightedPipeline)} weighted
+          </div>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
+          <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-medium">Monthly forecast</div>
+          <div className="mt-1.5 text-2xl font-semibold text-fg tabular-nums">{formatCurrency(report.forecastMonthly)}</div>
+          <div className="text-[11px] text-fg-subtle mt-1">based on velocity + pipeline</div>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
+          <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-medium">Win rate (90d)</div>
+          <div className="mt-1.5 text-2xl font-semibold text-fg tabular-nums">{Math.round(wr.winRate * 100)}%</div>
+          <div className="text-[11px] text-fg-subtle mt-1">{wr.won} won / {wr.lost} lost</div>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
+          <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-medium">Avg deal value</div>
+          <div className="mt-1.5 text-2xl font-semibold text-fg tabular-nums">{formatCurrency(wr.avgDealValue)}</div>
+          <div className="text-[11px] text-fg-subtle mt-1">{wr.avgDaysToClose}d avg close time</div>
+        </div>
       </section>
 
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          label="Avg deal value"
-          value={formatCurrency(wr.avgDealValue)}
-          hint="completed deals"
-        />
-        <StatCard
-          label="Avg days to close"
-          value={wr.avgDaysToClose.toString()}
-          hint="from inquiry to completed"
-        />
-        <StatCard
-          label="Deals closed (90d)"
-          value={wr.totalClosed.toString()}
-          hint={`${wr.won} won, ${wr.lost} lost`}
-        />
-        <StatCard
-          label="At-risk jobs"
-          value={report.atRisk.length.toString()}
-          hint="stale over 7 days"
-        />
-      </section>
+      {/* Secondary stats — compact inline row */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-fg-muted px-1">
+        <span>Deals closed (90d): <strong className="text-fg">{wr.totalClosed}</strong></span>
+        <span>At-risk: <strong className="text-fg">{report.atRisk.length}</strong> stale &gt;7d</span>
+        <span>Open stages: <strong className="text-fg">{report.stageBreakdown.filter(b => b.count > 0).length}</strong></span>
+      </div>
 
-      <Card>
-        <CardHeader
-          title="Pipeline by stage"
-          subtitle="Value breakdown with probability weighting"
-        />
-        <CardBody>
-          <div className="space-y-3">
+      {/* Pipeline by stage */}
+      {report.stageBreakdown.some((b) => b.count > 0) && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-fg">Pipeline by stage</h2>
+            <span className="text-xs text-fg-subtle">Value with probability weighting</span>
+          </div>
+          <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] divide-y divide-border overflow-hidden">
             {report.stageBreakdown
               .filter((b) => b.count > 0)
               .map((b) => {
@@ -100,16 +83,16 @@ export default function ReportsPage() {
                     ? (b.totalValue / report.totalPipeline) * 100
                     : 0;
                 return (
-                  <div key={b.stage} className="space-y-1">
+                  <div key={b.stage} className="px-4 py-3">
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <StageBadge stage={b.stage} />
-                        <span className="text-fg-muted">
+                        <span className="text-fg-muted text-xs">
                           {b.count} job{b.count !== 1 ? "s" : ""}
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="font-medium text-fg">
+                        <span className="font-medium text-fg tabular-nums">
                           {formatCurrency(b.totalValue)}
                         </span>
                         <span className="text-fg-subtle text-xs ml-2">
@@ -117,7 +100,7 @@ export default function ReportsPage() {
                         </span>
                       </div>
                     </div>
-                    <div className="w-full h-2 rounded-full bg-surface-2 overflow-hidden">
+                    <div className="mt-2 w-full h-1.5 rounded-full bg-surface-2 overflow-hidden">
                       <div
                         className="h-full rounded-full bg-accent transition-all"
                         style={{ width: `${Math.min(100, pct)}%` }}
@@ -127,60 +110,53 @@ export default function ReportsPage() {
                 );
               })}
           </div>
-        </CardBody>
-      </Card>
+        </section>
+      )}
 
-      <Card>
-        <CardHeader
-          title="At-risk jobs"
-          subtitle="Open jobs with no recent activity"
-          action={
-            <Link href="/deals" className="text-xs text-accent hover:underline">
-              View pipeline
-            </Link>
-          }
-        />
-        <CardBody>
-          {report.atRisk.length === 0 ? (
-            <p className="text-sm text-fg-muted py-4 text-center">
-              No at-risk jobs right now. Nice work keeping things moving.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {report.atRisk.map((r) => (
-                <li
-                  key={r.deal.id}
-                  className="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <StageBadge stage={r.deal.stage} />
-                      <Link
-                        href={`/deals/${r.deal.id}`}
-                        className="font-medium text-fg truncate hover:text-accent"
-                      >
-                        {r.deal.title}
-                      </Link>
-                    </div>
-                    <div className="text-xs text-fg-subtle mt-1">
-                      {r.contactName}
-                    </div>
-                    <div className="text-xs text-danger mt-0.5">{r.reason}</div>
+      {/* At-risk jobs */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-fg">At-risk jobs</h2>
+          <Link href="/deals" className="text-xs text-accent hover:underline">
+            View pipeline
+          </Link>
+        </div>
+        {report.atRisk.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-fg-subtle">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/10 text-success text-xs">&#10003;</span>
+            No at-risk jobs right now. Nice work keeping things moving.
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)] divide-y divide-border overflow-hidden">
+            {report.atRisk.map((r) => (
+              <div
+                key={r.deal.id}
+                className="px-4 py-3 flex items-start justify-between gap-3 hover:bg-surface-2/50 transition-colors"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <StageBadge stage={r.deal.stage} />
+                    <Link
+                      href={`/deals/${r.deal.id}`}
+                      className="text-sm font-medium text-fg truncate hover:text-accent transition-colors"
+                    >
+                      {r.deal.title}
+                    </Link>
                   </div>
-                  <div className="text-right whitespace-nowrap">
-                    <div className="font-semibold text-fg tabular-nums">
-                      {formatCurrency(r.deal.amount)}
-                    </div>
-                    <div className="text-[10px] text-fg-subtle">
-                      {r.daysSinceActivity}d stale
-                    </div>
+                  <div className="text-xs text-fg-subtle mt-0.5">{r.contactName}</div>
+                  <div className="text-xs text-danger mt-0.5">{r.reason}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-sm font-semibold text-fg tabular-nums">
+                    {formatCurrency(r.deal.amount)}
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardBody>
-      </Card>
+                  <div className="text-[10px] text-fg-subtle">{r.daysSinceActivity}d stale</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
