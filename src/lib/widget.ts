@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 // Website chat widget — generates embed tokens and validates inbound
 // messages from the embeddable JS snippet on the SMB's website.
@@ -48,7 +48,6 @@ export function verifyWidgetToken(
       .update(payload)
       .digest("hex");
 
-    const { timingSafeEqual } = require("node:crypto");
     const valid = timingSafeEqual(
       Buffer.from(sig),
       Buffer.from(expected)
