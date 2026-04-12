@@ -199,6 +199,7 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "followUps", "sentMessageId", "TEXT");
   addColumnIfMissing(conn, "deals", "costMaterials", "REAL DEFAULT 0");
   addColumnIfMissing(conn, "deals", "costLabor", "REAL DEFAULT 0");
+  addColumnIfMissing(conn, "users", "aiWeeklyBudgetUsd", "REAL DEFAULT 0");
 
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -302,6 +303,7 @@ interface UserRow {
   passwordHash: string;
   name: string;
   inboundAddress: string | null;
+  aiWeeklyBudgetUsd: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -312,6 +314,7 @@ function rowToUser(row: UserRow): User {
     email: row.email,
     name: row.name,
     inboundAddress: row.inboundAddress ?? undefined,
+    aiWeeklyBudgetUsd: row.aiWeeklyBudgetUsd ?? 0,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -582,6 +585,7 @@ export function createUserRow(input: {
     email: input.email,
     name: input.name,
     inboundAddress: input.inboundAddress,
+    aiWeeklyBudgetUsd: 0,
     createdAt: nowStr,
     updatedAt: nowStr,
   };
@@ -598,6 +602,20 @@ export function updateUserInboundAddress(
       `UPDATE users SET inboundAddress = ?, updatedAt = ? WHERE id = ?`
     )
     .run(inboundAddress, nowStr, userId);
+  if (result.changes === 0) return undefined;
+  return getUserById(userId);
+}
+
+export function updateUserAiBudget(
+  userId: string,
+  budgetUsd: number
+): User | undefined {
+  const conn = db();
+  const result = conn
+    .prepare(
+      `UPDATE users SET aiWeeklyBudgetUsd = ?, updatedAt = ? WHERE id = ?`
+    )
+    .run(budgetUsd, now(), userId);
   if (result.changes === 0) return undefined;
   return getUserById(userId);
 }

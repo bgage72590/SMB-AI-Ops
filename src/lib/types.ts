@@ -14,6 +14,11 @@ export interface User {
    * set, the inbound webhook falls back to the first user in the database.
    */
   inboundAddress?: string;
+  /**
+   * Weekly AI spend budget in USD. When the rolling 7-day spend exceeds this
+   * the platform falls back to heuristic mode. 0 = unlimited.
+   */
+  aiWeeklyBudgetUsd: number;
   createdAt: string;
   updatedAt: string;
 }
