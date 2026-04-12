@@ -24,7 +24,7 @@ import {
 import { formatCurrency, formatRelative, formatUsdFine } from "@/lib/format";
 import { isAIConfigured } from "@/lib/ai";
 import { checkAiBudget } from "@/lib/aiUsage";
-import { isPostmarkConfigured } from "@/lib/postmark";
+import { isEmailConfigured } from "@/lib/sendgrid";
 import { requireUser } from "@/lib/auth";
 import { checkTrial } from "@/lib/trial";
 import { TrialBanner } from "@/components/TrialBanner";
@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const deals = listDeals(user.id);
   const contacts = listContacts(user.id);
   const followUps = listFollowUps(user.id);
-  const canSend = isPostmarkConfigured();
+  const canSend = isEmailConfigured();
   const trial = checkTrial(user);
 
   const unprocessed = emails.filter((e) => !e.processed);

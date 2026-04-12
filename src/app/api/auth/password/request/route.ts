@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requestPasswordReset } from "@/lib/auth";
-import { isPostmarkConfigured, sendEmail } from "@/lib/postmark";
+import { isEmailConfigured, sendEmail } from "@/lib/sendgrid";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -13,8 +13,8 @@ const RequestSchema = z.object({ email: z.string().email() });
  * returns `{ ok: true }` regardless of whether the email exists — the
  * response must not leak whether an account is registered.
  *
- * In production, with POSTMARK_SERVER_TOKEN + POSTMARK_FROM_EMAIL set,
- * we mail the reset link via Postmark. Otherwise we log it to stdout so
+ * In production, with SENDGRID_API_KEY + SENDGRID_FROM_EMAIL set,
+ * we mail the reset link via SendGrid. Otherwise we log it to stdout so
  * the developer can still walk the flow locally.
  */
 export async function POST(request: Request) {
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const { resetUrl } = requestPasswordReset({ email: parsed.data.email });
 
   if (resetUrl) {
-    if (isPostmarkConfigured()) {
+    if (isEmailConfigured()) {
       try {
         await sendEmail({
           to: parsed.data.email,

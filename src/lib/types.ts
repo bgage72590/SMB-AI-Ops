@@ -19,7 +19,7 @@ export interface User {
   email: string;
   name: string;
   /**
-   * Optional per-user inbound address. When set, incoming Postmark webhooks
+   * Optional per-user inbound address. When set, incoming SendGrid webhooks
    * whose `To` header matches this value are routed to this user. When not
    * set, the inbound webhook falls back to the first user in the database.
    */
@@ -177,7 +177,7 @@ export interface FollowUp {
   scheduledFor?: string;
   /** ISO timestamp when the follow-up was actually dispatched. */
   sentAt?: string;
-  /** Message ID returned by the email provider (e.g. Postmark) or Twilio SID. */
+  /** Message ID returned by the email provider (e.g. SendGrid) or Twilio SID. */
   sentMessageId?: string;
   /** iCalendar (.ics) data when a concrete appointment time was detected. */
   icsData?: string;

@@ -31,7 +31,7 @@ export default function DomainPage() {
           </p>
           <p className="text-sm text-fg-muted mt-2">
             You only need to do this if you're sending follow-ups from your
-            own domain. If you're using the default noreply address, Postmark
+            own domain. If you're using the default noreply address, SendGrid
             handles deliverability for you.
           </p>
         </CardBody>

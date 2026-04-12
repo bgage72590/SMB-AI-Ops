@@ -9,7 +9,7 @@ import {
 } from "./store";
 import { isAIConfigured } from "./ai";
 import { logAiUsage, type UsageLike } from "./aiUsage";
-import { isPostmarkConfigured, sendEmail } from "./postmark";
+import { isEmailConfigured, sendEmail } from "./sendgrid";
 import Anthropic from "@anthropic-ai/sdk";
 
 // Weekly AI digest. A single endpoint iterates every user, builds a
@@ -234,9 +234,9 @@ export async function runWeeklyDigest(): Promise<DigestRunResult> {
     result.attempted++;
     try {
       const digest = await buildUserDigest(user);
-      if (!isPostmarkConfigured()) {
+      if (!isEmailConfigured()) {
         // In dev, log the digest so operators can see what would ship
-        // without needing a Postmark account.
+        // without needing a SendGrid account.
         console.log(
           `[digest] (dev, would email ${user.email})\n${digest.subject}\n${digest.body}`
         );

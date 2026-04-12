@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getContact, getFollowUp, logAudit, updateFollowUp } from "@/lib/store";
-import { isPostmarkConfigured, sendEmail } from "@/lib/postmark";
+import { isEmailConfigured, sendEmail } from "@/lib/sendgrid";
 import { isTwilioConfigured, sendSms } from "@/lib/twilio";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { trialGuardResponse } from "@/lib/trialGuard";
@@ -14,7 +14,7 @@ const SendSchema = z.object({ id: z.string().min(1) });
 // Body: { id: string }
 //
 // Dispatches the follow-up via the appropriate channel (email or SMS).
-// Email goes through Postmark; SMS goes through Twilio.
+// Email goes through SendGrid; SMS goes through Twilio.
 export async function POST(request: Request) {
   let user;
   try {
@@ -80,12 +80,12 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!isPostmarkConfigured()) {
+  if (!isEmailConfigured()) {
     return NextResponse.json(
       {
-        error: "postmark_not_configured",
+        error: "email_not_configured",
         message:
-          "Set POSTMARK_SERVER_TOKEN and POSTMARK_FROM_EMAIL in .env to enable sending.",
+          "Set SENDGRID_API_KEY and SENDGRID_FROM_EMAIL in .env to enable sending.",
       },
       { status: 412 }
     );
