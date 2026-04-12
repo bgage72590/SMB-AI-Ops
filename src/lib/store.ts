@@ -21,6 +21,9 @@ import type {
   StoreShape,
   SubscriptionStatus,
   User,
+  WebhookDelivery,
+  WebhookEndpoint,
+  WebhookEvent,
 } from "./types";
 import { LEGACY_STAGE_MAP } from "./types";
 import { closeConnection, getConnection } from "./db";
@@ -268,6 +271,15 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "googleRefreshToken", "TEXT");
   addColumnIfMissing(conn, "users", "googleCalendarEnabled", "INTEGER DEFAULT 0");
   addColumnIfMissing(conn, "users", "workspaceId", "TEXT");
+  addColumnIfMissing(conn, "users", "gmailAccessToken", "TEXT");
+  addColumnIfMissing(conn, "users", "gmailRefreshToken", "TEXT");
+  addColumnIfMissing(conn, "users", "gmailConnected", "INTEGER DEFAULT 0");
+  addColumnIfMissing(conn, "users", "gmailEmail", "TEXT");
+  addColumnIfMissing(conn, "emails", "externalId", "TEXT");
+  addColumnIfMissing(conn, "users", "outlookAccessToken", "TEXT");
+  addColumnIfMissing(conn, "users", "outlookRefreshToken", "TEXT");
+  addColumnIfMissing(conn, "users", "outlookConnected", "INTEGER DEFAULT 0");
+  addColumnIfMissing(conn, "users", "outlookEmail", "TEXT");
 
   conn.exec(`
     CREATE TABLE IF NOT EXISTS enrichment_cache (
@@ -312,6 +324,31 @@ function migrate(conn: Database.Database): void {
       updatedAt   TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(userId);
+
+    CREATE TABLE IF NOT EXISTS webhook_endpoints (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      url         TEXT NOT NULL,
+      events      TEXT NOT NULL DEFAULT '[]',
+      secret      TEXT,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_webhook_user ON webhook_endpoints(userId);
+
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id           TEXT PRIMARY KEY,
+      endpointId   TEXT NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+      event        TEXT NOT NULL,
+      payload      TEXT NOT NULL,
+      status       INTEGER,
+      response     TEXT,
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      lastAttempt  TEXT,
+      createdAt    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_whd_endpoint ON webhook_deliveries(endpointId);
 
     CREATE TABLE IF NOT EXISTS sms_messages (
       id          TEXT PRIMARY KEY,
@@ -731,6 +768,50 @@ function insertEmailRow(conn: Database.Database, e: Email): void {
     });
 }
 
+/**
+ * Import an email from Gmail/Outlook. Returns true if a new row was created,
+ * false if the externalId already existed (duplicate).
+ */
+export function upsertEmailFromGmail(
+  userId: string,
+  input: {
+    gmailId: string;
+    from: string;
+    fromName?: string;
+    to: string;
+    subject: string;
+    body: string;
+    receivedAt: string;
+  }
+): boolean {
+  const conn = db();
+  const existing = conn
+    .prepare(
+      "SELECT id FROM emails WHERE userId = ? AND externalId = ?"
+    )
+    .get(userId, input.gmailId) as { id: string } | undefined;
+  if (existing) return false;
+
+  const id = randomUUID();
+  conn
+    .prepare(
+      `INSERT INTO emails (id, userId, fromAddr, fromName, toAddr, subject, body, receivedAt, processed, externalId)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+    )
+    .run(
+      id,
+      userId,
+      input.from,
+      input.fromName || null,
+      input.to,
+      input.subject,
+      input.body,
+      input.receivedAt,
+      input.gmailId
+    );
+  return true;
+}
+
 function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
   conn
     .prepare(
@@ -887,6 +968,72 @@ export function updateUserCalendar(
   if (fields.googleCalendarEnabled !== undefined) {
     sets.push("googleCalendarEnabled = ?");
     vals.push(fields.googleCalendarEnabled ? 1 : 0);
+  }
+  vals.push(userId);
+  conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getUserById(userId);
+}
+
+export function updateUserGmail(
+  userId: string,
+  fields: {
+    gmailAccessToken?: string | null;
+    gmailRefreshToken?: string | null;
+    gmailConnected?: boolean;
+    gmailEmail?: string | null;
+  }
+): User | undefined {
+  const conn = db();
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (fields.gmailAccessToken !== undefined) {
+    sets.push("gmailAccessToken = ?");
+    vals.push(fields.gmailAccessToken);
+  }
+  if (fields.gmailRefreshToken !== undefined) {
+    sets.push("gmailRefreshToken = ?");
+    vals.push(fields.gmailRefreshToken);
+  }
+  if (fields.gmailConnected !== undefined) {
+    sets.push("gmailConnected = ?");
+    vals.push(fields.gmailConnected ? 1 : 0);
+  }
+  if (fields.gmailEmail !== undefined) {
+    sets.push("gmailEmail = ?");
+    vals.push(fields.gmailEmail);
+  }
+  vals.push(userId);
+  conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getUserById(userId);
+}
+
+export function updateUserOutlook(
+  userId: string,
+  fields: {
+    outlookAccessToken?: string | null;
+    outlookRefreshToken?: string | null;
+    outlookConnected?: boolean;
+    outlookEmail?: string | null;
+  }
+): User | undefined {
+  const conn = db();
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (fields.outlookAccessToken !== undefined) {
+    sets.push("outlookAccessToken = ?");
+    vals.push(fields.outlookAccessToken);
+  }
+  if (fields.outlookRefreshToken !== undefined) {
+    sets.push("outlookRefreshToken = ?");
+    vals.push(fields.outlookRefreshToken);
+  }
+  if (fields.outlookConnected !== undefined) {
+    sets.push("outlookConnected = ?");
+    vals.push(fields.outlookConnected ? 1 : 0);
+  }
+  if (fields.outlookEmail !== undefined) {
+    sets.push("outlookEmail = ?");
+    vals.push(fields.outlookEmail);
   }
   vals.push(userId);
   conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
@@ -2690,4 +2837,118 @@ export function findContactByPhone(
     if (!c.phone) return false;
     return c.phone.replace(/[^+\d]/g, "") === normalized;
   });
+}
+
+// ---------- Webhook Endpoints ----------
+
+function parseWebhookEndpoint(row: Record<string, unknown>): WebhookEndpoint {
+  return {
+    ...row,
+    events: JSON.parse((row.events as string) || "[]"),
+    enabled: Boolean(row.enabled),
+  } as WebhookEndpoint;
+}
+
+export function listWebhookEndpoints(userId: string): WebhookEndpoint[] {
+  const rows = db()
+    .prepare(
+      "SELECT * FROM webhook_endpoints WHERE userId = ? ORDER BY createdAt DESC"
+    )
+    .all(userId) as Record<string, unknown>[];
+  return rows.map(parseWebhookEndpoint);
+}
+
+export function getWebhookEndpoint(
+  userId: string,
+  id: string
+): WebhookEndpoint | undefined {
+  const row = db()
+    .prepare("SELECT * FROM webhook_endpoints WHERE id = ? AND userId = ?")
+    .get(id, userId) as Record<string, unknown> | undefined;
+  return row ? parseWebhookEndpoint(row) : undefined;
+}
+
+export function createWebhookEndpoint(
+  userId: string,
+  input: { url: string; events: WebhookEvent[]; secret?: string }
+): WebhookEndpoint {
+  const id = randomUUID();
+  const ts = now();
+  db()
+    .prepare(
+      `INSERT INTO webhook_endpoints (id, userId, url, events, secret, enabled, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+    )
+    .run(id, userId, input.url, JSON.stringify(input.events), input.secret || null, ts, ts);
+  return getWebhookEndpoint(userId, id)!;
+}
+
+export function updateWebhookEndpoint(
+  userId: string,
+  id: string,
+  patch: { url?: string; events?: WebhookEvent[]; secret?: string; enabled?: boolean }
+): WebhookEndpoint | undefined {
+  const existing = getWebhookEndpoint(userId, id);
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (patch.url !== undefined) { sets.push("url = ?"); vals.push(patch.url); }
+  if (patch.events !== undefined) { sets.push("events = ?"); vals.push(JSON.stringify(patch.events)); }
+  if (patch.secret !== undefined) { sets.push("secret = ?"); vals.push(patch.secret); }
+  if (patch.enabled !== undefined) { sets.push("enabled = ?"); vals.push(patch.enabled ? 1 : 0); }
+
+  vals.push(id, userId);
+  db()
+    .prepare(`UPDATE webhook_endpoints SET ${sets.join(", ")} WHERE id = ? AND userId = ?`)
+    .run(...vals);
+  return getWebhookEndpoint(userId, id);
+}
+
+export function deleteWebhookEndpoint(userId: string, id: string): boolean {
+  const result = db()
+    .prepare("DELETE FROM webhook_endpoints WHERE id = ? AND userId = ?")
+    .run(id, userId);
+  return result.changes > 0;
+}
+
+export function getEnabledWebhookEndpoints(
+  userId: string,
+  event: string
+): WebhookEndpoint[] {
+  const all = listWebhookEndpoints(userId);
+  return all.filter(
+    (ep) => ep.enabled && (ep.events.length === 0 || ep.events.includes(event as WebhookEvent))
+  );
+}
+
+export function createWebhookDelivery(input: {
+  endpointId: string;
+  event: string;
+  payload: string;
+  status?: number;
+  response?: string;
+}): WebhookDelivery {
+  const id = randomUUID();
+  const ts = now();
+  db()
+    .prepare(
+      `INSERT INTO webhook_deliveries (id, endpointId, event, payload, status, response, attempts, lastAttempt, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    )
+    .run(id, input.endpointId, input.event, input.payload, input.status || null, input.response || null, ts, ts);
+  return db()
+    .prepare("SELECT * FROM webhook_deliveries WHERE id = ?")
+    .get(id) as WebhookDelivery;
+}
+
+export function listRecentDeliveries(
+  endpointId: string,
+  limit: number = 20
+): WebhookDelivery[] {
+  return db()
+    .prepare(
+      "SELECT * FROM webhook_deliveries WHERE endpointId = ? ORDER BY createdAt DESC LIMIT ?"
+    )
+    .all(endpointId, limit) as WebhookDelivery[];
 }

@@ -111,6 +111,15 @@ export default function SettingsPage() {
         <CardBody>
           <nav className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Link
+              href="/settings/email"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Email</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Connect Gmail or Outlook directly
+              </p>
+            </Link>
+            <Link
               href="/settings/usage"
               className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
             >
@@ -162,6 +171,15 @@ export default function SettingsPage() {
               <h3 className="font-medium text-sm text-fg">Domain</h3>
               <p className="text-xs text-fg-muted mt-1">
                 Verify SPF, DKIM &amp; DMARC for deliverability
+              </p>
+            </Link>
+            <Link
+              href="/settings/webhooks"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Webhooks</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Send events to Zapier, Make, or your API
               </p>
             </Link>
             <Link

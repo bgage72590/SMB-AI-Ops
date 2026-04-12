@@ -40,6 +40,16 @@ export interface User {
   googleAccessToken?: string;
   googleRefreshToken?: string;
   googleCalendarEnabled?: boolean;
+  /** Gmail OAuth tokens for direct inbox reading. */
+  gmailAccessToken?: string;
+  gmailRefreshToken?: string;
+  gmailConnected?: boolean;
+  gmailEmail?: string;
+  /** Outlook OAuth tokens for direct inbox reading. */
+  outlookAccessToken?: string;
+  outlookRefreshToken?: string;
+  outlookConnected?: boolean;
+  outlookEmail?: string;
   /** Workspace ID for team collaboration (Phase 3.3). */
   workspaceId?: string;
   createdAt: string;
@@ -181,6 +191,42 @@ export interface FollowUp {
   sentMessageId?: string;
   /** iCalendar (.ics) data when a concrete appointment time was detected. */
   icsData?: string;
+}
+
+export type WebhookEvent =
+  | "contact.created"
+  | "contact.updated"
+  | "deal.created"
+  | "deal.updated"
+  | "deal.stage_changed"
+  | "email.received"
+  | "email.processed"
+  | "followup.created"
+  | "followup.sent"
+  | "invoice.created"
+  | "invoice.status_changed";
+
+export interface WebhookEndpoint {
+  id: string;
+  userId: string;
+  url: string;
+  events: WebhookEvent[];
+  secret?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  endpointId: string;
+  event: string;
+  payload: string;
+  status?: number;
+  response?: string;
+  attempts: number;
+  lastAttempt?: string;
+  createdAt: string;
 }
 
 export type SmsDirection = "inbound" | "outbound";
