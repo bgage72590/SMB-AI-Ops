@@ -102,6 +102,8 @@ export interface Deal {
   stage: DealStage;
   amount: number; // in whole currency units (e.g. USD)
   currency: string;
+  costMaterials: number;
+  costLabor: number;
   nextStep?: string;
   lastActivityAt: string;
   createdAt: string;

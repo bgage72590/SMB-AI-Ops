@@ -11,6 +11,7 @@ import {
   CardHeader,
   EmptyState,
   PageHeader,
+  StatCard,
 } from "@/components/ui";
 import {
   getContact,
@@ -134,6 +135,35 @@ export default function JobDetailPage({ params }: Props) {
             <p className="text-sm text-fg">{deal.nextStep}</p>
           </CardBody>
         </Card>
+      )}
+
+      {(deal.costMaterials > 0 || deal.costLabor > 0) && (
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard
+            label="Revenue"
+            value={formatCurrency(deal.amount, deal.currency)}
+          />
+          <StatCard
+            label="Materials"
+            value={formatCurrency(deal.costMaterials, deal.currency)}
+          />
+          <StatCard
+            label="Labor"
+            value={formatCurrency(deal.costLabor, deal.currency)}
+          />
+          <StatCard
+            label="Profit"
+            value={formatCurrency(
+              deal.amount - deal.costMaterials - deal.costLabor,
+              deal.currency
+            )}
+            hint={`${Math.round(
+              ((deal.amount - deal.costMaterials - deal.costLabor) /
+                (deal.amount || 1)) *
+                100
+            )}% margin`}
+          />
+        </section>
       )}
 
       <Card>

@@ -197,6 +197,8 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "followUps", "userId", "TEXT");
   addColumnIfMissing(conn, "followUps", "sentAt", "TEXT");
   addColumnIfMissing(conn, "followUps", "sentMessageId", "TEXT");
+  addColumnIfMissing(conn, "deals", "costMaterials", "REAL DEFAULT 0");
+  addColumnIfMissing(conn, "deals", "costLabor", "REAL DEFAULT 0");
 
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -360,6 +362,8 @@ interface DealRow {
   stage: DealStage;
   amount: number;
   currency: string;
+  costMaterials: number;
+  costLabor: number;
   nextStep: string | null;
   lastActivityAt: string;
   createdAt: string;
@@ -375,6 +379,8 @@ function rowToDeal(row: DealRow): Deal {
     stage: row.stage,
     amount: row.amount,
     currency: row.currency,
+    costMaterials: row.costMaterials ?? 0,
+    costLabor: row.costLabor ?? 0,
     nextStep: row.nextStep ?? undefined,
     lastActivityAt: row.lastActivityAt,
     createdAt: row.createdAt,
@@ -478,8 +484,8 @@ function insertContactRow(conn: Database.Database, c: Contact): void {
 function insertDealRow(conn: Database.Database, d: Deal): void {
   conn
     .prepare(
-      `INSERT INTO deals (id, userId, title, contactId, stage, amount, currency, nextStep, lastActivityAt, createdAt, updatedAt)
-       VALUES (@id, @userId, @title, @contactId, @stage, @amount, @currency, @nextStep, @lastActivityAt, @createdAt, @updatedAt)`
+      `INSERT INTO deals (id, userId, title, contactId, stage, amount, currency, costMaterials, costLabor, nextStep, lastActivityAt, createdAt, updatedAt)
+       VALUES (@id, @userId, @title, @contactId, @stage, @amount, @currency, @costMaterials, @costLabor, @nextStep, @lastActivityAt, @createdAt, @updatedAt)`
     )
     .run({
       id: d.id,
@@ -489,6 +495,8 @@ function insertDealRow(conn: Database.Database, d: Deal): void {
       stage: d.stage,
       amount: d.amount,
       currency: d.currency,
+      costMaterials: d.costMaterials,
+      costLabor: d.costLabor,
       nextStep: d.nextStep ?? null,
       lastActivityAt: d.lastActivityAt,
       createdAt: d.createdAt,
@@ -1089,6 +1097,8 @@ export function createDeal(
     stage?: DealStage;
     amount?: number;
     currency?: string;
+    costMaterials?: number;
+    costLabor?: number;
     nextStep?: string;
   }
 ): Deal {
@@ -1100,6 +1110,8 @@ export function createDeal(
     stage: input.stage ?? "inquiry",
     amount: input.amount ?? 0,
     currency: input.currency ?? "USD",
+    costMaterials: input.costMaterials ?? 0,
+    costLabor: input.costLabor ?? 0,
     nextStep: input.nextStep,
     lastActivityAt: now(),
     createdAt: now(),
@@ -1130,6 +1142,8 @@ export function updateDeal(
     stage: patch.stage ?? existing.stage,
     amount: patch.amount ?? existing.amount,
     currency: patch.currency ?? existing.currency,
+    costMaterials: patch.costMaterials ?? existing.costMaterials,
+    costLabor: patch.costLabor ?? existing.costLabor,
     nextStep: patch.nextStep ?? existing.nextStep,
     lastActivityAt,
     createdAt: existing.createdAt,
@@ -1144,6 +1158,8 @@ export function updateDeal(
          stage = @stage,
          amount = @amount,
          currency = @currency,
+         costMaterials = @costMaterials,
+         costLabor = @costLabor,
          nextStep = @nextStep,
          lastActivityAt = @lastActivityAt,
          updatedAt = @updatedAt
@@ -1157,6 +1173,8 @@ export function updateDeal(
       stage: next.stage,
       amount: next.amount,
       currency: next.currency,
+      costMaterials: next.costMaterials,
+      costLabor: next.costLabor,
       nextStep: next.nextStep ?? null,
       lastActivityAt: next.lastActivityAt,
       updatedAt: next.updatedAt,

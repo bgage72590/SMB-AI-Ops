@@ -51,10 +51,14 @@ export default function DashboardPage() {
   // "Booked this week" — completed jobs whose lastActivityAt is in the
   // last 7 days. Clean directional metric for a local service business.
   const weekAgo = Date.now() - WEEK_MS;
-  const bookedThisWeek = deals
+  const completedThisWeek = deals
     .filter((d) => d.stage === "completed")
-    .filter((d) => new Date(d.lastActivityAt).getTime() >= weekAgo)
-    .reduce((sum, d) => sum + d.amount, 0);
+    .filter((d) => new Date(d.lastActivityAt).getTime() >= weekAgo);
+  const bookedThisWeek = completedThisWeek.reduce((sum, d) => sum + d.amount, 0);
+  const profitThisWeek = completedThisWeek.reduce(
+    (sum, d) => sum + (d.amount - d.costMaterials - d.costLabor),
+    0
+  );
 
   const newClientsThisWeek = contacts.filter(
     (c) => new Date(c.createdAt).getTime() >= weekAgo
@@ -165,7 +169,7 @@ export default function DashboardPage() {
         <StatCard
           label="Booked this week"
           value={formatCurrency(bookedThisWeek)}
-          hint={`${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}`}
+          hint={`${formatCurrency(profitThisWeek)} profit · ${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}`}
         />
         <StatCard
           label="Open job value"

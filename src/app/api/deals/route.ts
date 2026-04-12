@@ -20,6 +20,8 @@ const CreateSchema = z.object({
   stage: z.enum(STAGES).optional(),
   amount: z.number().nonnegative().optional(),
   currency: z.string().optional(),
+  costMaterials: z.number().nonnegative().optional(),
+  costLabor: z.number().nonnegative().optional(),
   nextStep: z.string().optional(),
 });
 
@@ -27,6 +29,8 @@ const UpdateSchema = z.object({
   id: z.string().min(1),
   stage: z.enum(STAGES).optional(),
   amount: z.number().nonnegative().optional(),
+  costMaterials: z.number().nonnegative().optional(),
+  costLabor: z.number().nonnegative().optional(),
   nextStep: z.string().optional(),
   title: z.string().optional(),
 });
