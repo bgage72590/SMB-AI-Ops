@@ -208,6 +208,7 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "stripePriceId", "TEXT");
   addColumnIfMissing(conn, "users", "subscriptionStatus", "TEXT");
   addColumnIfMissing(conn, "users", "planTier", "TEXT DEFAULT 'free'");
+  addColumnIfMissing(conn, "users", "trialEndsAt", "TEXT");
 
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -317,6 +318,7 @@ interface UserRow {
   stripePriceId: string | null;
   subscriptionStatus: string | null;
   planTier: string | null;
+  trialEndsAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -333,6 +335,7 @@ function rowToUser(row: UserRow): User {
     stripePriceId: row.stripePriceId ?? undefined,
     subscriptionStatus: (row.subscriptionStatus as SubscriptionStatus) ?? undefined,
     planTier: (row.planTier as PlanTier) ?? "free",
+    trialEndsAt: row.trialEndsAt ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -650,6 +653,7 @@ export function updateUserStripe(
     stripePriceId?: string | null;
     subscriptionStatus?: string | null;
     planTier?: PlanTier;
+    trialEndsAt?: string;
   }
 ): User | undefined {
   const conn = db();
@@ -674,6 +678,10 @@ export function updateUserStripe(
   if (fields.planTier !== undefined) {
     sets.push("planTier = ?");
     vals.push(fields.planTier);
+  }
+  if (fields.trialEndsAt !== undefined) {
+    sets.push("trialEndsAt = ?");
+    vals.push(fields.trialEndsAt);
   }
   vals.push(userId);
   conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);

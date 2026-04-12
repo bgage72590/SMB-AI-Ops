@@ -23,6 +23,7 @@ import {
   markPasswordResetTokenUsed,
   seedWorkspace,
   updateUserPasswordHash,
+  updateUserStripe,
 } from "./store";
 
 // Small auth layer over the SQLite store. We keep everything in-house
@@ -97,6 +98,13 @@ export function signup(input: SignupInput): AuthResult {
     passwordHash: hashPassword(input.password),
     inboundAddress,
   });
+
+  const trialEndsAt = new Date(
+    Date.now() + 14 * 24 * 60 * 60 * 1000
+  ).toISOString();
+  updateUserStripe(user.id, { trialEndsAt });
+  user.trialEndsAt = trialEndsAt;
+
   seedWorkspace(user.id);
 
   const session = issueSession(user.id);

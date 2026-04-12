@@ -1,4 +1,5 @@
 import { FollowUpActions } from "@/components/FollowUpActions";
+import { DraftReviewList } from "@/components/DraftReviewList";
 import {
   Card,
   CardBody,
@@ -19,6 +20,22 @@ export default function FollowUpsPage() {
   const drafts = followUps.filter((f) => f.status === "draft");
   const rest = followUps.filter((f) => f.status !== "draft");
   const canSend = isPostmarkConfigured();
+
+  const draftData = drafts.map((f) => {
+    const contact = getContact(user.id, f.contactId);
+    const deal = f.dealId ? getDeal(user.id, f.dealId) : undefined;
+    return {
+      id: f.id,
+      contactName: contact?.name || "Unknown",
+      contactEmail: contact?.email || "",
+      dealTitle: deal?.title,
+      subject: f.subject,
+      draft: f.draft,
+      reason: f.reason,
+      createdAt: formatRelative(f.createdAt),
+      hasIcs: !!f.icsData,
+    };
+  });
 
   return (
     <div className="space-y-8">
@@ -41,55 +58,7 @@ export default function FollowUpsPage() {
               description="Process your inbox to generate AI-drafted replies for anything that needs a response."
             />
           ) : (
-            <ul className="space-y-4">
-              {drafts.map((f) => {
-                const contact = getContact(user.id, f.contactId);
-                const deal = f.dealId ? getDeal(user.id, f.dealId) : undefined;
-                return (
-                  <li
-                    key={f.id}
-                    className="rounded-lg border border-border bg-surface-2/50 p-5"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs text-fg-subtle">
-                          To: {contact?.name || "Unknown"}{" "}
-                          <span className="text-fg-subtle/70">
-                            &lt;{contact?.email}&gt;
-                          </span>
-                          {deal && (
-                            <span className="ml-2 text-fg-muted">
-                              · {deal.title}
-                            </span>
-                          )}
-                        </div>
-                        <div className="font-medium text-fg mt-1">
-                          {f.subject}
-                        </div>
-                        <pre className="text-sm text-fg-muted mt-3 whitespace-pre-wrap font-sans bg-surface rounded-md p-3 border border-border">
-                          {f.draft}
-                        </pre>
-                        <div className="text-xs text-fg-subtle mt-2 italic">
-                          Why: {f.reason}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-3 shrink-0">
-                        <span className="text-xs text-fg-subtle">
-                          {formatRelative(f.createdAt)}
-                        </span>
-                        <FollowUpActions
-                          id={f.id}
-                          currentStatus={f.status}
-                          canSend={canSend}
-                          sentAt={f.sentAt}
-                          hasIcs={!!f.icsData}
-                        />
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <DraftReviewList drafts={draftData} canSend={canSend} />
           )}
         </CardBody>
       </Card>
