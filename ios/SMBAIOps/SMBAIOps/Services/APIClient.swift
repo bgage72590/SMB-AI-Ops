@@ -34,8 +34,8 @@ final class APIClient: Sendable {
     static let shared = APIClient()
 
     private let session: URLSession
-    private nonisolated(unsafe) let decoder = JSONDecoder()
-    private nonisolated(unsafe) let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
 
     var baseURL: String {
         get { UserDefaults.standard.string(forKey: "api_base_url") ?? "http://localhost:3000" }
