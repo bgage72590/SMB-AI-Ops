@@ -53,7 +53,7 @@ export default function RootLayout({
                     id="main-content"
                     className="flex-1 overflow-y-auto"
                   >
-                    <div className="max-w-6xl px-6 py-6 lg:px-8 lg:py-8">
+                    <div className="px-6 py-6 lg:px-10 lg:py-8">
                       {children}
                     </div>
                   </main>
