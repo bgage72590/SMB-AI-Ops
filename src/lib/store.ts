@@ -9,6 +9,7 @@ import type {
   EmailCategory,
   EmailPriority,
   FollowUp,
+  FollowUpChannel,
   PlanTier,
   Session,
   StoreShape,
@@ -214,6 +215,27 @@ function migrate(conn: Database.Database): void {
       ON audit_log(userId, createdAt);
     CREATE INDEX IF NOT EXISTS idx_audit_entity
       ON audit_log(entityType, entityId);
+
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id        TEXT PRIMARY KEY,
+      name      TEXT NOT NULL,
+      ownerId   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      createdAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_invites (
+      id          TEXT PRIMARY KEY,
+      workspaceId TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      email       TEXT NOT NULL COLLATE NOCASE,
+      role        TEXT NOT NULL DEFAULT 'member',
+      invitedBy   TEXT NOT NULL REFERENCES users(id),
+      acceptedAt  TEXT,
+      createdAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ws_invites_workspace
+      ON workspace_invites(workspaceId);
+    CREATE INDEX IF NOT EXISTS idx_ws_invites_email
+      ON workspace_invites(email);
   `);
 
   // Incremental column adds for existing installs that predate the userId
@@ -235,7 +257,13 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "subscriptionStatus", "TEXT");
   addColumnIfMissing(conn, "users", "planTier", "TEXT DEFAULT 'free'");
   addColumnIfMissing(conn, "users", "trialEndsAt", "TEXT");
+  addColumnIfMissing(conn, "followUps", "channel", "TEXT DEFAULT 'email'");
+  addColumnIfMissing(conn, "users", "googleAccessToken", "TEXT");
+  addColumnIfMissing(conn, "users", "googleRefreshToken", "TEXT");
+  addColumnIfMissing(conn, "users", "googleCalendarEnabled", "INTEGER DEFAULT 0");
+  addColumnIfMissing(conn, "users", "workspaceId", "TEXT");
 
+  provisionWorkspaces(conn);
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
 }
@@ -245,6 +273,27 @@ function migrate(conn: Database.Database): void {
  * Safe to run on every boot — the UPDATEs only touch rows whose stage
  * value is still one of the legacy names, so re-running is a no-op.
  */
+/**
+ * Auto-create a workspace for any user that doesn't have one yet. On first
+ * boot this gives every existing user their own workspace. New users get
+ * one at signup time (via createWorkspace).
+ */
+function provisionWorkspaces(conn: Database.Database): void {
+  const orphans = conn
+    .prepare("SELECT id, name FROM users WHERE workspaceId IS NULL")
+    .all() as Array<{ id: string; name: string }>;
+  for (const u of orphans) {
+    const wsId = randomUUID();
+    const ts = new Date().toISOString();
+    conn
+      .prepare("INSERT INTO workspaces (id, name, ownerId, createdAt) VALUES (?, ?, ?, ?)")
+      .run(wsId, `${u.name}'s workspace`, u.id, ts);
+    conn
+      .prepare("UPDATE users SET workspaceId = ? WHERE id = ?")
+      .run(wsId, u.id);
+  }
+}
+
 function migrateLegacyStageValues(conn: Database.Database): void {
   const stmt = conn.prepare("UPDATE deals SET stage = ? WHERE stage = ?");
   for (const [oldStage, newStage] of Object.entries(LEGACY_STAGE_MAP)) {
@@ -345,6 +394,10 @@ interface UserRow {
   subscriptionStatus: string | null;
   planTier: string | null;
   trialEndsAt: string | null;
+  googleAccessToken: string | null;
+  googleRefreshToken: string | null;
+  googleCalendarEnabled: number | null;
+  workspaceId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -362,6 +415,10 @@ function rowToUser(row: UserRow): User {
     subscriptionStatus: (row.subscriptionStatus as SubscriptionStatus) ?? undefined,
     planTier: (row.planTier as PlanTier) ?? "free",
     trialEndsAt: row.trialEndsAt ?? undefined,
+    googleAccessToken: row.googleAccessToken ?? undefined,
+    googleRefreshToken: row.googleRefreshToken ?? undefined,
+    googleCalendarEnabled: row.googleCalendarEnabled === 1 ? true : undefined,
+    workspaceId: row.workspaceId ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -486,6 +543,7 @@ interface FollowUpRow {
   draft: string;
   reason: string;
   status: FollowUp["status"];
+  channel: string | null;
   createdAt: string;
   scheduledFor: string | null;
   sentAt: string | null;
@@ -504,6 +562,7 @@ function rowToFollowUp(row: FollowUpRow): FollowUp {
     draft: row.draft,
     reason: row.reason,
     status: row.status,
+    channel: (row.channel as FollowUpChannel) ?? "email",
     createdAt: row.createdAt,
     scheduledFor: row.scheduledFor ?? undefined,
     sentAt: row.sentAt ?? undefined,
@@ -584,8 +643,8 @@ function insertEmailRow(conn: Database.Database, e: Email): void {
 function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
   conn
     .prepare(
-      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor, sentAt, sentMessageId, icsData)
-       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor, @sentAt, @sentMessageId, @icsData)`
+      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, channel, createdAt, scheduledFor, sentAt, sentMessageId, icsData)
+       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @channel, @createdAt, @scheduledFor, @sentAt, @sentMessageId, @icsData)`
     )
     .run({
       id: f.id,
@@ -597,6 +656,7 @@ function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
       draft: f.draft,
       reason: f.reason,
       status: f.status,
+      channel: f.channel ?? "email",
       createdAt: f.createdAt,
       scheduledFor: f.scheduledFor ?? null,
       sentAt: f.sentAt ?? null,
@@ -708,6 +768,34 @@ export function updateUserStripe(
   if (fields.trialEndsAt !== undefined) {
     sets.push("trialEndsAt = ?");
     vals.push(fields.trialEndsAt);
+  }
+  vals.push(userId);
+  conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getUserById(userId);
+}
+
+export function updateUserCalendar(
+  userId: string,
+  fields: {
+    googleAccessToken?: string | null;
+    googleRefreshToken?: string | null;
+    googleCalendarEnabled?: boolean;
+  }
+): User | undefined {
+  const conn = db();
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (fields.googleAccessToken !== undefined) {
+    sets.push("googleAccessToken = ?");
+    vals.push(fields.googleAccessToken);
+  }
+  if (fields.googleRefreshToken !== undefined) {
+    sets.push("googleRefreshToken = ?");
+    vals.push(fields.googleRefreshToken);
+  }
+  if (fields.googleCalendarEnabled !== undefined) {
+    sets.push("googleCalendarEnabled = ?");
+    vals.push(fields.googleCalendarEnabled ? 1 : 0);
   }
   vals.push(userId);
   conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
@@ -1516,6 +1604,7 @@ export function createFollowUp(
     reason: string;
     scheduledFor?: string;
     icsData?: string;
+    channel?: FollowUpChannel;
   }
 ): FollowUp {
   const followUp: FollowUp = {
@@ -1528,6 +1617,7 @@ export function createFollowUp(
     draft: input.draft,
     reason: input.reason,
     status: "draft",
+    channel: input.channel ?? "email",
     createdAt: now(),
     scheduledFor: input.scheduledFor,
     icsData: input.icsData,
@@ -1558,6 +1648,7 @@ export function updateFollowUp(
     draft: patch.draft ?? existing.draft,
     reason: patch.reason ?? existing.reason,
     status: patch.status ?? existing.status,
+    channel: patch.channel ?? existing.channel ?? "email",
     createdAt: existing.createdAt,
     scheduledFor:
       patch.scheduledFor !== undefined
@@ -1584,6 +1675,7 @@ export function updateFollowUp(
          draft = @draft,
          reason = @reason,
          status = @status,
+         channel = @channel,
          scheduledFor = @scheduledFor,
          sentAt = @sentAt,
          sentMessageId = @sentMessageId,
@@ -1600,6 +1692,7 @@ export function updateFollowUp(
       draft: next.draft,
       reason: next.reason,
       status: next.status,
+      channel: next.channel,
       scheduledFor: next.scheduledFor,
       sentAt: next.sentAt,
       sentMessageId: next.sentMessageId,
@@ -1790,6 +1883,116 @@ export function isSenderBlocked(userId: string, senderEmail: string): boolean {
     )
     .get(userId, email, domain);
   return !!row;
+}
+
+// ---------- Workspaces ----------
+
+export interface Workspace {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: string;
+  invitedBy: string;
+  acceptedAt?: string;
+  createdAt: string;
+}
+
+export function createWorkspace(name: string, ownerId: string): Workspace {
+  const ws: Workspace = {
+    id: newId(),
+    name,
+    ownerId,
+    createdAt: now(),
+  };
+  db()
+    .prepare(
+      "INSERT INTO workspaces (id, name, ownerId, createdAt) VALUES (?, ?, ?, ?)"
+    )
+    .run(ws.id, ws.name, ws.ownerId, ws.createdAt);
+  db()
+    .prepare("UPDATE users SET workspaceId = ? WHERE id = ?")
+    .run(ws.id, ownerId);
+  return ws;
+}
+
+export function getWorkspace(workspaceId: string): Workspace | undefined {
+  return db()
+    .prepare("SELECT * FROM workspaces WHERE id = ?")
+    .get(workspaceId) as Workspace | undefined;
+}
+
+export function getWorkspaceMembers(workspaceId: string): User[] {
+  const rows = db()
+    .prepare("SELECT * FROM users WHERE workspaceId = ?")
+    .all(workspaceId) as UserRow[];
+  return rows.map(rowToUser);
+}
+
+export function createWorkspaceInvite(
+  workspaceId: string,
+  email: string,
+  invitedBy: string,
+  role = "member"
+): WorkspaceInvite {
+  const invite: WorkspaceInvite = {
+    id: newId(),
+    workspaceId,
+    email: email.toLowerCase().trim(),
+    role,
+    invitedBy,
+    createdAt: now(),
+  };
+  db()
+    .prepare(
+      "INSERT INTO workspace_invites (id, workspaceId, email, role, invitedBy, createdAt) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .run(invite.id, invite.workspaceId, invite.email, invite.role, invite.invitedBy, invite.createdAt);
+  return invite;
+}
+
+export function listWorkspaceInvites(workspaceId: string): WorkspaceInvite[] {
+  return db()
+    .prepare(
+      "SELECT * FROM workspace_invites WHERE workspaceId = ? ORDER BY createdAt DESC"
+    )
+    .all(workspaceId) as WorkspaceInvite[];
+}
+
+export function getPendingInviteForEmail(email: string): WorkspaceInvite | undefined {
+  return db()
+    .prepare(
+      "SELECT * FROM workspace_invites WHERE email = ? AND acceptedAt IS NULL ORDER BY createdAt DESC LIMIT 1"
+    )
+    .get(email.toLowerCase().trim()) as WorkspaceInvite | undefined;
+}
+
+export function acceptWorkspaceInvite(inviteId: string, userId: string): void {
+  const invite = db()
+    .prepare("SELECT * FROM workspace_invites WHERE id = ?")
+    .get(inviteId) as WorkspaceInvite | undefined;
+  if (!invite || invite.acceptedAt) return;
+  db()
+    .prepare("UPDATE workspace_invites SET acceptedAt = ? WHERE id = ?")
+    .run(now(), inviteId);
+  db()
+    .prepare("UPDATE users SET workspaceId = ? WHERE id = ?")
+    .run(invite.workspaceId, userId);
+}
+
+export function removeWorkspaceMember(workspaceId: string, userId: string): boolean {
+  const ws = getWorkspace(workspaceId);
+  if (!ws || ws.ownerId === userId) return false;
+  db()
+    .prepare("UPDATE users SET workspaceId = NULL WHERE id = ? AND workspaceId = ?")
+    .run(userId, workspaceId);
+  return true;
 }
 
 // ---------- Audit log ----------

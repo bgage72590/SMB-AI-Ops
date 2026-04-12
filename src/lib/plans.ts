@@ -10,7 +10,7 @@ const TIER_RANK: Record<PlanTier, number> = {
 
 export function hasFeature(
   user: User,
-  feature: "job_costing" | "calendar_ics" | "email_threading" | "ai_budget_controls"
+  feature: "job_costing" | "calendar_ics" | "email_threading" | "ai_budget_controls" | "calendar_sync" | "sms_followups" | "team_members"
 ): boolean {
   const tier = user.planTier ?? "free";
   switch (feature) {
@@ -20,7 +20,13 @@ export function hasFeature(
       return TIER_RANK[tier] >= TIER_RANK.starter;
     case "email_threading":
       return TIER_RANK[tier] >= TIER_RANK.starter;
+    case "sms_followups":
+      return TIER_RANK[tier] >= TIER_RANK.starter;
+    case "calendar_sync":
+      return TIER_RANK[tier] >= TIER_RANK.starter;
     case "ai_budget_controls":
+      return TIER_RANK[tier] >= TIER_RANK.pro;
+    case "team_members":
       return TIER_RANK[tier] >= TIER_RANK.pro;
   }
 }

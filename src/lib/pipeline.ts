@@ -16,6 +16,11 @@ import {
 } from "./store";
 import { draftFollowUp, triageEmailSafe } from "./ai";
 import { generateIcs, parseSchedulingTime } from "./ical";
+import {
+  formatAvailabilityForPrompt,
+  getAvailability,
+  refreshAccessToken,
+} from "./google-calendar";
 import { checkUsageLimits } from "./plans";
 import type { Email } from "./types";
 
@@ -139,12 +144,27 @@ export async function processEmail(
       // rather than gating on `category === "scheduling"` because
       // deal_update/new_lead replies often end with "let's find time" too.
       const schedulingLink = process.env.SCHEDULING_LINK?.trim() || undefined;
+      let calendarAvailability: string | undefined;
+      if (
+        owner?.googleCalendarEnabled &&
+        owner.googleRefreshToken &&
+        (triage.category === "scheduling" || triage.category === "new_lead")
+      ) {
+        try {
+          const refreshed = await refreshAccessToken(owner.googleRefreshToken);
+          const avail = await getAvailability(refreshed.accessToken);
+          calendarAvailability = formatAvailabilityForPrompt(avail);
+        } catch (err) {
+          console.warn("Failed to fetch calendar availability:", err);
+        }
+      }
       const draft = await draftFollowUp({
         contact,
         deal,
         lastEmail: email,
         category: triage.category,
         schedulingLink,
+        calendarAvailability,
         userId,
       });
       let icsData: string | undefined;

@@ -36,6 +36,12 @@ export interface User {
   planTier: PlanTier;
   /** ISO timestamp when the free trial expires. null = no trial (paid). */
   trialEndsAt?: string;
+  /** Google Calendar OAuth tokens for availability integration. */
+  googleAccessToken?: string;
+  googleRefreshToken?: string;
+  googleCalendarEnabled?: boolean;
+  /** Workspace ID for team collaboration (Phase 3.3). */
+  workspaceId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -153,6 +159,8 @@ export interface Email {
   followUpId?: string;
 }
 
+export type FollowUpChannel = "email" | "sms";
+
 export interface FollowUp {
   id: string;
   userId: string;
@@ -163,11 +171,13 @@ export interface FollowUp {
   draft: string;
   reason: string;
   status: "draft" | "approved" | "sent" | "dismissed";
+  /** Delivery channel. Defaults to "email". SMS requires a phone on the contact. */
+  channel: FollowUpChannel;
   createdAt: string;
   scheduledFor?: string;
   /** ISO timestamp when the follow-up was actually dispatched. */
   sentAt?: string;
-  /** Message ID returned by the email provider (e.g. Postmark). */
+  /** Message ID returned by the email provider (e.g. Postmark) or Twilio SID. */
   sentMessageId?: string;
   /** iCalendar (.ics) data when a concrete appointment time was detected. */
   icsData?: string;

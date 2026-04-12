@@ -344,6 +344,11 @@ export interface DraftFollowUpInput {
    * table so the dashboard can show a per-workspace spend estimate.
    */
   userId?: string;
+  /**
+   * Formatted calendar availability string. When provided, the AI can
+   * propose specific open time slots rather than asking generically.
+   */
+  calendarAvailability?: string;
 }
 
 export async function draftFollowUp(
@@ -419,6 +424,10 @@ function buildDraftContext(input: DraftFollowUpInput): string {
     parts.push("");
     parts.push(`Last email from them (subject: "${input.lastEmail.subject}"):`);
     parts.push(input.lastEmail.body);
+  }
+  if (input.calendarAvailability) {
+    parts.push("");
+    parts.push(input.calendarAvailability);
   }
   if (input.context) {
     parts.push("");
