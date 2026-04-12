@@ -1354,6 +1354,18 @@ export function listFollowUpsForContact(
   return rows.map(rowToFollowUp);
 }
 
+export function findFollowUpBySentMessageId(
+  userId: string,
+  messageId: string
+): FollowUp | undefined {
+  const row = db()
+    .prepare(
+      "SELECT * FROM followUps WHERE userId = ? AND sentMessageId = ?"
+    )
+    .get(userId, messageId) as FollowUpRow | undefined;
+  return row ? rowToFollowUp(row) : undefined;
+}
+
 export function listFollowUpsForDeal(
   userId: string,
   dealId: string
