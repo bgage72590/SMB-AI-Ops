@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ProcessButton } from "@/components/ProcessButton";
 import { FollowUpActions } from "@/components/FollowUpActions";
+import { InboundAddressCard } from "@/components/InboundAddressCard";
 import {
   CategoryBadge,
   PriorityBadge,
@@ -99,6 +100,10 @@ export default function DashboardPage() {
             <code>.env</code> and add your key to enable real AI.
           </p>
         </Card>
+      )}
+
+      {user.inboundAddress && (
+        <InboundAddressCard address={user.inboundAddress} />
       )}
 
       {/* Hero: what needs the owner's attention right now. */}

@@ -527,23 +527,48 @@ export function createUserRow(input: {
   email: string;
   passwordHash: string;
   name: string;
+  inboundAddress?: string;
 }): User {
   const conn = db();
   const id = newId();
   const nowStr = now();
   conn
     .prepare(
-      `INSERT INTO users (id, email, passwordHash, name, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO users (id, email, passwordHash, name, inboundAddress, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, input.email, input.passwordHash, input.name, nowStr, nowStr);
+    .run(
+      id,
+      input.email,
+      input.passwordHash,
+      input.name,
+      input.inboundAddress ?? null,
+      nowStr,
+      nowStr
+    );
   return {
     id,
     email: input.email,
     name: input.name,
+    inboundAddress: input.inboundAddress,
     createdAt: nowStr,
     updatedAt: nowStr,
   };
+}
+
+export function updateUserInboundAddress(
+  userId: string,
+  inboundAddress: string
+): User | undefined {
+  const conn = db();
+  const nowStr = now();
+  const result = conn
+    .prepare(
+      `UPDATE users SET inboundAddress = ?, updatedAt = ? WHERE id = ?`
+    )
+    .run(inboundAddress, nowStr, userId);
+  if (result.changes === 0) return undefined;
+  return getUserById(userId);
 }
 
 export function getUserById(userId: string): User | undefined {
