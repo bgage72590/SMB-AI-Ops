@@ -7,6 +7,7 @@ import type {
   EmailPriority,
   Contact,
 } from "./types";
+import { logAiUsage, type UsageLike } from "./aiUsage";
 
 // Thin wrapper around the Anthropic SDK so the rest of the codebase doesn't
 // need to know which model, prompts, or tool format we're using.
@@ -166,7 +167,10 @@ const TRIAGE_TOOL = {
   },
 };
 
-export async function triageEmail(email: Email): Promise<TriageResult> {
+export async function triageEmail(
+  email: Email,
+  opts: { userId?: string } = {}
+): Promise<TriageResult> {
   // Use the beta prompt-caching endpoint so `cache_control` is honored by
   // the API and typed by the SDK. In 0.30.x of @anthropic-ai/sdk,
   // cache_control only exists on the beta namespace's TextBlockParam.
@@ -200,6 +204,15 @@ ${email.body}`,
     ],
   });
 
+  if (opts.userId) {
+    logAiUsage({
+      userId: opts.userId,
+      kind: "triage",
+      model: DEFAULT_MODEL,
+      usage: response.usage as UsageLike,
+    });
+  }
+
   const toolUse = response.content.find((c) => c.type === "tool_use");
   if (!toolUse || toolUse.type !== "tool_use") {
     throw new Error("Model did not call record_triage tool");
@@ -210,10 +223,13 @@ ${email.body}`,
 // Non-throwing variant with a heuristic fallback so the pipeline keeps moving
 // even if the API key is missing or rate-limited. We still return something
 // usable rather than erroring the whole batch.
-export async function triageEmailSafe(email: Email): Promise<TriageResult> {
+export async function triageEmailSafe(
+  email: Email,
+  opts: { userId?: string } = {}
+): Promise<TriageResult> {
   if (!isAIConfigured()) return heuristicTriage(email);
   try {
-    return await triageEmail(email);
+    return await triageEmail(email, opts);
   } catch (err) {
     console.warn("triageEmail failed, falling back to heuristic:", err);
     return heuristicTriage(email);
@@ -319,6 +335,11 @@ export interface DraftFollowUpInput {
    * relevant.
    */
   category?: EmailCategory;
+  /**
+   * When set, the model's usage is attributed to this user in the ai_usage
+   * table so the dashboard can show a per-workspace spend estimate.
+   */
+  userId?: string;
 }
 
 export async function draftFollowUp(
@@ -351,6 +372,14 @@ export async function draftFollowUp(
         },
       ],
     });
+    if (input.userId) {
+      logAiUsage({
+        userId: input.userId,
+        kind: "draft",
+        model: DEFAULT_MODEL,
+        usage: response.usage as UsageLike,
+      });
+    }
     const toolUse = response.content.find((c) => c.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {
       throw new Error("Model did not call record_follow_up tool");

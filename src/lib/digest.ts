@@ -8,6 +8,7 @@ import {
   listFollowUps,
 } from "./store";
 import { isAIConfigured } from "./ai";
+import { logAiUsage, type UsageLike } from "./aiUsage";
 import { isPostmarkConfigured, sendEmail } from "./postmark";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -118,6 +119,12 @@ export async function writeHeadline(
           content: `Stats for the past 7 days for ${user.name}:\n\n${context}\n\nWrite the focus paragraph now.`,
         },
       ],
+    });
+    logAiUsage({
+      userId: user.id,
+      kind: "digest",
+      model: DIGEST_MODEL,
+      usage: res.usage as UsageLike,
     });
     const text = res.content
       .filter((c): c is Anthropic.TextBlock => c.type === "text")

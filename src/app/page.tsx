@@ -22,8 +22,9 @@ import {
   listDeals,
   listEmails,
   listFollowUps,
+  sumAiUsageSince,
 } from "@/lib/store";
-import { formatCurrency, formatRelative } from "@/lib/format";
+import { formatCurrency, formatRelative, formatUsdFine } from "@/lib/format";
 import { isAIConfigured } from "@/lib/ai";
 import { isPostmarkConfigured } from "@/lib/postmark";
 import { requireUser } from "@/lib/auth";
@@ -58,6 +59,9 @@ export default function DashboardPage() {
   const newClientsThisWeek = contacts.filter(
     (c) => new Date(c.createdAt).getTime() >= weekAgo
   ).length;
+
+  const weekAgoIso = new Date(weekAgo).toISOString();
+  const aiUsage = sumAiUsageSince(user.id, weekAgoIso);
 
   // "AI just did this" — emails the pipeline has already triaged,
   // freshest first, with the chip + one-liner summary.
@@ -157,7 +161,7 @@ export default function DashboardPage() {
       </Card>
 
       {/* At-a-glance stats. */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard
           label="Booked this week"
           value={formatCurrency(bookedThisWeek)}
@@ -177,6 +181,11 @@ export default function DashboardPage() {
           label="Clients"
           value={contacts.length}
           hint="in your book"
+        />
+        <StatCard
+          label="AI spend · 7d"
+          value={formatUsdFine(aiUsage.totalCostUsd)}
+          hint={`${aiUsage.calls} AI call${aiUsage.calls === 1 ? "" : "s"}`}
         />
       </section>
 

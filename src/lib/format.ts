@@ -10,6 +10,20 @@ export function formatCurrency(amount: number, currency = "USD"): string {
   }
 }
 
+export function formatUsdFine(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) return "$0.00";
+  if (amount < 0.01) return "<$0.01";
+  if (amount < 1) return `$${amount.toFixed(2)}`;
+  if (amount < 100) {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(amount);
+  }
+  return formatCurrency(amount);
+}
+
 export function formatRelative(iso: string): string {
   const then = new Date(iso).getTime();
   const now = Date.now();

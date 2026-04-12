@@ -171,6 +171,21 @@ function migrate(conn: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_followups_user ON followUps(userId);
     CREATE INDEX IF NOT EXISTS idx_followups_status ON followUps(status);
+
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      id                  TEXT PRIMARY KEY,
+      userId              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind                TEXT NOT NULL,
+      model               TEXT NOT NULL,
+      inputTokens         INTEGER NOT NULL DEFAULT 0,
+      outputTokens        INTEGER NOT NULL DEFAULT 0,
+      cachedInputTokens   INTEGER NOT NULL DEFAULT 0,
+      cacheCreationTokens INTEGER NOT NULL DEFAULT 0,
+      estimatedCostUsd    REAL NOT NULL DEFAULT 0,
+      createdAt           TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created
+      ON ai_usage(userId, createdAt);
   `);
 
   // Incremental column adds for existing installs that predate the userId
@@ -1429,6 +1444,93 @@ export function updateFollowUp(
     });
 
   return rowToFollowUp(next);
+}
+
+// ---------- AI usage ----------
+
+export interface AiUsageRow {
+  id: string;
+  userId: string;
+  kind: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  cacheCreationTokens: number;
+  estimatedCostUsd: number;
+  createdAt: string;
+}
+
+export function recordAiUsage(input: {
+  userId: string;
+  kind: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  cacheCreationTokens?: number;
+  estimatedCostUsd: number;
+}): AiUsageRow {
+  const row: AiUsageRow = {
+    id: newId(),
+    userId: input.userId,
+    kind: input.kind,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cachedInputTokens: input.cachedInputTokens ?? 0,
+    cacheCreationTokens: input.cacheCreationTokens ?? 0,
+    estimatedCostUsd: input.estimatedCostUsd,
+    createdAt: now(),
+  };
+  db()
+    .prepare(
+      `INSERT INTO ai_usage
+         (id, userId, kind, model, inputTokens, outputTokens,
+          cachedInputTokens, cacheCreationTokens, estimatedCostUsd, createdAt)
+       VALUES (@id, @userId, @kind, @model, @inputTokens, @outputTokens,
+               @cachedInputTokens, @cacheCreationTokens, @estimatedCostUsd, @createdAt)`
+    )
+    .run(row);
+  return row;
+}
+
+export interface AiUsageSummary {
+  totalCostUsd: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCachedInputTokens: number;
+  totalCacheCreationTokens: number;
+  calls: number;
+}
+
+export function sumAiUsageSince(
+  userId: string,
+  sinceIso: string
+): AiUsageSummary {
+  const row = db()
+    .prepare(
+      `SELECT
+         COALESCE(SUM(estimatedCostUsd), 0)    AS totalCostUsd,
+         COALESCE(SUM(inputTokens), 0)         AS totalInputTokens,
+         COALESCE(SUM(outputTokens), 0)        AS totalOutputTokens,
+         COALESCE(SUM(cachedInputTokens), 0)   AS totalCachedInputTokens,
+         COALESCE(SUM(cacheCreationTokens), 0) AS totalCacheCreationTokens,
+         COUNT(*)                              AS calls
+       FROM ai_usage
+       WHERE userId = ? AND createdAt >= ?`
+    )
+    .get(userId, sinceIso) as AiUsageSummary;
+  return row;
+}
+
+export function listAiUsage(userId: string, limit = 100): AiUsageRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM ai_usage WHERE userId = ?
+       ORDER BY createdAt DESC LIMIT ?`
+    )
+    .all(userId, limit) as AiUsageRow[];
 }
 
 // ---------- Workspace seeding + maintenance ----------
