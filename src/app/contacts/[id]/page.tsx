@@ -6,6 +6,7 @@ import {
   StageBadge,
 } from "@/components/Badge";
 import { Breadcrumb } from "@/components/Breadcrumb";
+import { ContactEditForm } from "@/components/ContactEditForm";
 import {
   getContact,
   listDealsForContact,
@@ -116,6 +117,8 @@ export default function ClientDetailPage({ params }: Props) {
                 <span className="text-fg-subtle text-xs">Added {formatRelative(contact.createdAt)} &middot; Last touch {formatRelative(contact.updatedAt)}</span>
               </div>
             </div>
+
+            <ContactEditForm contact={{ id: contact.id, name: contact.name, email: contact.email, company: contact.company, phone: contact.phone, notes: contact.notes }} />
           </div>
 
           {/* Stats */}

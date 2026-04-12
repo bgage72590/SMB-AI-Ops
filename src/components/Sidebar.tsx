@@ -22,6 +22,9 @@ const NAV_ITEMS: Array<{
   { href: "/deals", label: "Jobs", icon: "briefcase" },
   { href: "/contacts", label: "Clients", icon: "users" },
   { href: "/followups", label: "Follow-ups", icon: "send", badgeKey: "followups" },
+  { href: "/calendar", label: "Calendar", icon: "calendar" },
+  { href: "/activity", label: "Activity", icon: "activity" },
+  { href: "/automations", label: "Automations", icon: "zap" },
   { href: "/reports", label: "Reports", icon: "bar-chart" },
 ];
 
@@ -87,6 +90,27 @@ function NavIcon({ name, className }: { name: string; className?: string }) {
           <line x1="12" x2="12" y1="20" y2="10" />
           <line x1="18" x2="18" y1="20" y2="4" />
           <line x1="6" x2="6" y1="20" y2="14" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg {...props}>
+          <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      );
+    case "activity":
+      return (
+        <svg {...props}>
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+      );
+    case "zap":
+      return (
+        <svg {...props}>
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
       );
     case "settings":
