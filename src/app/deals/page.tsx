@@ -60,7 +60,7 @@ export default function JobsPage() {
         <StatCard
           label="Booked"
           value={formatCurrency(bookedValue)}
-          hint={`${formatCurrency(bookedProfit)} profit · ${byStage.completed.length} completed`}
+          hint={byStage.completed.length > 0 ? `${formatCurrency(bookedProfit)} profit · ${byStage.completed.length} completed` : "0 completed"}
         />
         <StatCard
           label="Scheduled"

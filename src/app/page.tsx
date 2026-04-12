@@ -195,7 +195,7 @@ export default function DashboardPage() {
         <StatCard
           label="Booked this week"
           value={formatCurrency(bookedThisWeek)}
-          hint={`${formatCurrency(profitThisWeek)} profit · ${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}`}
+          hint={completedThisWeek.length > 0 ? `${formatCurrency(profitThisWeek)} profit · ${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}` : `${newClientsThisWeek} new client${newClientsThisWeek === 1 ? "" : "s"}`}
         />
         <StatCard
           label="Open job value"

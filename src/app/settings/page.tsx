@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getUserById } from "@/lib/store";
 import { PLANS, isStripeConfigured } from "@/lib/stripe";
 import { checkUsageLimits } from "@/lib/plans";
-import { Card, CardBody, CardHeader, PageHeader, Button } from "@/components/ui";
+import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { BillingActions } from "@/components/BillingActions";
 
 export default function SettingsPage() {
@@ -97,8 +97,8 @@ export default function SettingsPage() {
         <Card>
           <CardHeader title="Upgrade your plan" />
           <CardBody>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {PLANS.map((plan) => {
+            <div className="grid gap-4 sm:grid-cols-2">
+              {PLANS.filter((p) => p.price > 0).map((plan) => {
                 const isCurrent = plan.tier === fresh.planTier;
                 return (
                   <div
@@ -113,11 +113,9 @@ export default function SettingsPage() {
                       <h3 className="font-semibold">{plan.name}</h3>
                       <p className="text-2xl font-bold mt-1">
                         ${plan.price}
-                        {plan.price > 0 && (
-                          <span className="text-sm font-normal text-fg-muted">
-                            /mo
-                          </span>
-                        )}
+                        <span className="text-sm font-normal text-fg-muted">
+                          /mo
+                        </span>
                       </p>
                     </div>
                     <ul className="text-sm text-fg-muted space-y-1 flex-1">
@@ -131,7 +129,7 @@ export default function SettingsPage() {
                       <span className="text-center text-sm text-fg-muted py-2">
                         Current plan
                       </span>
-                    ) : plan.price === 0 ? null : stripeReady ? (
+                    ) : stripeReady ? (
                       <BillingActions action="checkout" planTier={plan.tier} />
                     ) : (
                       <span className="text-center text-xs text-fg-subtle py-2">
