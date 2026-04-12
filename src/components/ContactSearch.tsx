@@ -30,7 +30,7 @@ export function ContactSearch() {
         type="search"
         value={query}
         onChange={(e) => handleChange(e.target.value)}
-        placeholder="Search clients by name, email, or company\u2026"
+        placeholder="Search clients by name, email, or company..."
         className="w-full h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-surface text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-ring/40"
         aria-label="Search clients"
       />
