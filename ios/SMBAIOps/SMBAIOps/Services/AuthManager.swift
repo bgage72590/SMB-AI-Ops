@@ -18,7 +18,7 @@ final class AuthManager {
         }
     }
 
-    funccheckSession() async {
+    func checkSession() async {
         isLoading = true
         defer { isLoading = false }
 
@@ -33,19 +33,19 @@ final class AuthManager {
         }
     }
 
-    funclogin(email: String, password: String) async throws {
+    func login(email: String, password: String) async throws {
         let response: AuthResponse = try await api.post("/api/auth/login", body: LoginRequest(email: email, password: password))
         currentUser = response.user
         cacheUser(response.user)
     }
 
-    funcsignup(name: String, email: String, password: String) async throws {
+    func signup(name: String, email: String, password: String) async throws {
         let response: AuthResponse = try await api.post("/api/auth/signup", body: SignupRequest(name: name, email: email, password: password))
         currentUser = response.user
         cacheUser(response.user)
     }
 
-    funclogout() async {
+    func logout() async {
         try? await api.postNoContent("/api/auth/logout", body: EmptyBody())
         api.clearCookies()
         currentUser = nil
