@@ -36,7 +36,7 @@ export function ThemeToggle() {
             }`}
           >
             <span aria-hidden>{opt.icon}</span>
-            <span className="hidden sm:inline">{opt.label}</span>
+            {opt.label}
           </button>
         );
       })}
