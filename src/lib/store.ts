@@ -1885,6 +1885,50 @@ export function isSenderBlocked(userId: string, senderEmail: string): boolean {
   return !!row;
 }
 
+// ---------- Account deletion (GDPR) ----------
+
+/**
+ * Permanently delete all data associated with a user. This cascades
+ * through foreign keys for most tables; we also explicitly delete from
+ * tables that use soft references (emails, followUps, contacts, deals).
+ *
+ * Returns the number of tables cleaned.
+ */
+export function deleteUserData(userId: string): number {
+  const conn = db();
+  let tables = 0;
+  const ops = [
+    "DELETE FROM audit_log WHERE userId = ?",
+    "DELETE FROM ai_usage WHERE userId = ?",
+    "DELETE FROM sender_blocklist WHERE userId = ?",
+    "DELETE FROM followUps WHERE userId = ?",
+    "DELETE FROM emails WHERE userId = ?",
+    "DELETE FROM deals WHERE userId IN (SELECT id FROM deals WHERE userId = ?)",
+    "DELETE FROM contacts WHERE userId = ?",
+    "DELETE FROM jobs WHERE userId = ?",
+    "DELETE FROM sessions WHERE userId = ?",
+    "DELETE FROM password_reset_tokens WHERE userId = ?",
+    "DELETE FROM workspace_invites WHERE invitedBy = ?",
+  ];
+  for (const sql of ops) {
+    try {
+      conn.prepare(sql).run(userId);
+      tables++;
+    } catch {
+      // some tables may not exist in older schemas
+    }
+  }
+  try {
+    conn.prepare("DELETE FROM deals WHERE userId = ?").run(userId);
+    tables++;
+  } catch { /* ignore */ }
+  try {
+    conn.prepare("DELETE FROM users WHERE id = ?").run(userId);
+    tables++;
+  } catch { /* ignore */ }
+  return tables;
+}
+
 // ---------- Workspaces ----------
 
 export interface Workspace {
