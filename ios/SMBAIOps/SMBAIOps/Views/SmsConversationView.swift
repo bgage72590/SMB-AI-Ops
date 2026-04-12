@@ -118,7 +118,7 @@ private struct MessageBubble: View {
                             : Color.accentColor,
                         in: RoundedRectangle(cornerRadius: 18)
                     )
-                    .foregroundStyle(message.isInbound ? .primary : .white)
+                    .foregroundStyle(message.isInbound ? Color.primary : Color.white)
 
                 Text(message.createdAt.relativeDate)
                     .font(.caption2)
