@@ -19,7 +19,7 @@ export interface User {
   email: string;
   name: string;
   /**
-   * Optional per-user inbound address. When set, incoming Postmark webhooks
+   * Optional per-user inbound address. When set, incoming SendGrid webhooks
    * whose `To` header matches this value are routed to this user. When not
    * set, the inbound webhook falls back to the first user in the database.
    */
@@ -40,6 +40,16 @@ export interface User {
   googleAccessToken?: string;
   googleRefreshToken?: string;
   googleCalendarEnabled?: boolean;
+  /** Gmail OAuth tokens for direct inbox reading. */
+  gmailAccessToken?: string;
+  gmailRefreshToken?: string;
+  gmailConnected?: boolean;
+  gmailEmail?: string;
+  /** Outlook OAuth tokens for direct inbox reading. */
+  outlookAccessToken?: string;
+  outlookRefreshToken?: string;
+  outlookConnected?: boolean;
+  outlookEmail?: string;
   /** Workspace ID for team collaboration (Phase 3.3). */
   workspaceId?: string;
   createdAt: string;
@@ -177,10 +187,91 @@ export interface FollowUp {
   scheduledFor?: string;
   /** ISO timestamp when the follow-up was actually dispatched. */
   sentAt?: string;
-  /** Message ID returned by the email provider (e.g. Postmark) or Twilio SID. */
+  /** Message ID returned by the email provider (e.g. SendGrid) or Twilio SID. */
   sentMessageId?: string;
   /** iCalendar (.ics) data when a concrete appointment time was detected. */
   icsData?: string;
+}
+
+export type WebhookEvent =
+  | "contact.created"
+  | "contact.updated"
+  | "deal.created"
+  | "deal.updated"
+  | "deal.stage_changed"
+  | "email.received"
+  | "email.processed"
+  | "followup.created"
+  | "followup.sent"
+  | "invoice.created"
+  | "invoice.status_changed";
+
+export interface WebhookEndpoint {
+  id: string;
+  userId: string;
+  url: string;
+  events: WebhookEvent[];
+  secret?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  endpointId: string;
+  event: string;
+  payload: string;
+  status?: number;
+  response?: string;
+  attempts: number;
+  lastAttempt?: string;
+  createdAt: string;
+}
+
+export type SmsDirection = "inbound" | "outbound";
+
+export interface SmsMessage {
+  id: string;
+  userId: string;
+  contactId?: string;
+  direction: SmsDirection;
+  fromNumber: string;
+  toNumber: string;
+  body: string;
+  twilioSid?: string;
+  status: string;
+  createdAt: string;
+}
+
+export type InvoiceType = "quote" | "invoice";
+export type InvoiceStatus = "draft" | "sent" | "accepted" | "declined" | "paid" | "void";
+
+export interface LineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface Invoice {
+  id: string;
+  userId: string;
+  dealId?: string;
+  contactId: string;
+  type: InvoiceType;
+  number: string;
+  status: InvoiceStatus;
+  lineItems: LineItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  notes?: string;
+  validUntil?: string;
+  paidAt?: string;
+  sentAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface StoreShape {

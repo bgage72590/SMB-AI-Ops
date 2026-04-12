@@ -37,21 +37,21 @@ export async function checkDomainRecords(
     result.spf.records = spfRecords;
     if (spfRecords.length > 0) {
       const hasInclude =
-        spfRecords.some((r) => r.includes("include:spf.mtasv.net")) ||
+        spfRecords.some((r) => r.includes("include:sendgrid.net")) ||
         spfRecords.some((r) => r.includes("include:_spf.google.com")) ||
         spfRecords.some((r) => r.includes("include:"));
       result.spf.ok = hasInclude;
       if (!hasInclude) {
         result.spf.hint =
-          "SPF record exists but may not include your email provider. Add include:spf.mtasv.net for Postmark.";
+          "SPF record exists but may not include your email provider. Add include:sendgrid.net for SendGrid.";
       }
     } else {
       result.spf.hint =
-        'Add a TXT record: v=spf1 include:spf.mtasv.net ~all';
+        'Add a TXT record: v=spf1 include:sendgrid.net ~all';
     }
   } catch {
     result.spf.hint =
-      'No TXT records found. Add: v=spf1 include:spf.mtasv.net ~all';
+      'No TXT records found. Add: v=spf1 include:sendgrid.net ~all';
   }
 
   try {

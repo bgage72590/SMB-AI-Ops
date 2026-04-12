@@ -242,7 +242,7 @@ export function requireUserForApi(): User {
 
 export interface PasswordResetRequestOutput {
   // The caller-facing API always reports success to avoid leaking which
-  // emails exist. In dev (no Postmark) we hand back `resetUrl` so the
+  // emails exist. In dev (no SendGrid) we hand back `resetUrl` so the
   // developer can still complete the flow without an inbox.
   resetUrl?: string;
 }

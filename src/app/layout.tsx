@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardHelp } from "@/components/KeyboardHelp";
+import { PwaRegister } from "@/components/PwaRegister";
 import { Sidebar } from "@/components/Sidebar";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/components/ThemeProvider";
 import { ToastProvider } from "@/components/Toast";
@@ -37,6 +38,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#1a9b8f" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="AI Ops" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
@@ -92,6 +100,7 @@ export default function RootLayout({
             )}
             <CommandPalette enabled={Boolean(user)} />
             <KeyboardHelp enabled={Boolean(user)} />
+            <PwaRegister />
           </ToastProvider>
         </ThemeProvider>
       </body>

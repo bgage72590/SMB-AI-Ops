@@ -107,7 +107,7 @@ export function FollowUpActions({ id, currentStatus, canSend, sentAt, hasIcs, ch
             onClick={dispatchSend}
             loading={loading === "send"}
             disabled={loading !== null}
-            title={channel === "sms" ? "Send via Twilio SMS" : "Send via Postmark"}
+            title={channel === "sms" ? "Send via Twilio SMS" : "Send via SendGrid"}
           >
             {loading === "send" ? "Sending\u2026" : channel === "sms" ? "Send SMS" : "Send"}
           </Button>

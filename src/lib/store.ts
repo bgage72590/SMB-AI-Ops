@@ -10,11 +10,20 @@ import type {
   EmailPriority,
   FollowUp,
   FollowUpChannel,
+  Invoice,
+  InvoiceStatus,
+  InvoiceType,
+  LineItem,
   PlanTier,
   Session,
+  SmsDirection,
+  SmsMessage,
   StoreShape,
   SubscriptionStatus,
   User,
+  WebhookDelivery,
+  WebhookEndpoint,
+  WebhookEvent,
 } from "./types";
 import { LEGACY_STAGE_MAP } from "./types";
 import { closeConnection, getConnection } from "./db";
@@ -262,6 +271,15 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "googleRefreshToken", "TEXT");
   addColumnIfMissing(conn, "users", "googleCalendarEnabled", "INTEGER DEFAULT 0");
   addColumnIfMissing(conn, "users", "workspaceId", "TEXT");
+  addColumnIfMissing(conn, "users", "gmailAccessToken", "TEXT");
+  addColumnIfMissing(conn, "users", "gmailRefreshToken", "TEXT");
+  addColumnIfMissing(conn, "users", "gmailConnected", "INTEGER DEFAULT 0");
+  addColumnIfMissing(conn, "users", "gmailEmail", "TEXT");
+  addColumnIfMissing(conn, "emails", "externalId", "TEXT");
+  addColumnIfMissing(conn, "users", "outlookAccessToken", "TEXT");
+  addColumnIfMissing(conn, "users", "outlookRefreshToken", "TEXT");
+  addColumnIfMissing(conn, "users", "outlookConnected", "INTEGER DEFAULT 0");
+  addColumnIfMissing(conn, "users", "outlookEmail", "TEXT");
 
   conn.exec(`
     CREATE TABLE IF NOT EXISTS enrichment_cache (
@@ -306,6 +324,71 @@ function migrate(conn: Database.Database): void {
       updatedAt   TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(userId);
+
+    CREATE TABLE IF NOT EXISTS webhook_endpoints (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      url         TEXT NOT NULL,
+      events      TEXT NOT NULL DEFAULT '[]',
+      secret      TEXT,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_webhook_user ON webhook_endpoints(userId);
+
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id           TEXT PRIMARY KEY,
+      endpointId   TEXT NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+      event        TEXT NOT NULL,
+      payload      TEXT NOT NULL,
+      status       INTEGER,
+      response     TEXT,
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      lastAttempt  TEXT,
+      createdAt    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_whd_endpoint ON webhook_deliveries(endpointId);
+
+    CREATE TABLE IF NOT EXISTS sms_messages (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      contactId   TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+      direction   TEXT NOT NULL,
+      fromNumber  TEXT NOT NULL,
+      toNumber    TEXT NOT NULL,
+      body        TEXT NOT NULL,
+      twilioSid   TEXT,
+      status      TEXT NOT NULL DEFAULT 'delivered',
+      createdAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sms_user ON sms_messages(userId);
+    CREATE INDEX IF NOT EXISTS idx_sms_contact ON sms_messages(contactId);
+    CREATE INDEX IF NOT EXISTS idx_sms_created ON sms_messages(createdAt);
+
+    CREATE TABLE IF NOT EXISTS invoices (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      dealId      TEXT REFERENCES deals(id) ON DELETE SET NULL,
+      contactId   TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+      type        TEXT NOT NULL DEFAULT 'quote',
+      number      TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'draft',
+      lineItems   TEXT NOT NULL DEFAULT '[]',
+      subtotal    REAL NOT NULL DEFAULT 0,
+      tax         REAL NOT NULL DEFAULT 0,
+      total       REAL NOT NULL DEFAULT 0,
+      notes       TEXT,
+      validUntil  TEXT,
+      paidAt      TEXT,
+      sentAt      TEXT,
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(userId);
+    CREATE INDEX IF NOT EXISTS idx_invoices_contact ON invoices(contactId);
+    CREATE INDEX IF NOT EXISTS idx_invoices_deal ON invoices(dealId);
+    CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
   `);
 
   provisionWorkspaces(conn);
@@ -685,6 +768,50 @@ function insertEmailRow(conn: Database.Database, e: Email): void {
     });
 }
 
+/**
+ * Import an email from Gmail/Outlook. Returns true if a new row was created,
+ * false if the externalId already existed (duplicate).
+ */
+export function upsertEmailFromGmail(
+  userId: string,
+  input: {
+    gmailId: string;
+    from: string;
+    fromName?: string;
+    to: string;
+    subject: string;
+    body: string;
+    receivedAt: string;
+  }
+): boolean {
+  const conn = db();
+  const existing = conn
+    .prepare(
+      "SELECT id FROM emails WHERE userId = ? AND externalId = ?"
+    )
+    .get(userId, input.gmailId) as { id: string } | undefined;
+  if (existing) return false;
+
+  const id = randomUUID();
+  conn
+    .prepare(
+      `INSERT INTO emails (id, userId, fromAddr, fromName, toAddr, subject, body, receivedAt, processed, externalId)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+    )
+    .run(
+      id,
+      userId,
+      input.from,
+      input.fromName || null,
+      input.to,
+      input.subject,
+      input.body,
+      input.receivedAt,
+      input.gmailId
+    );
+  return true;
+}
+
 function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
   conn
     .prepare(
@@ -841,6 +968,72 @@ export function updateUserCalendar(
   if (fields.googleCalendarEnabled !== undefined) {
     sets.push("googleCalendarEnabled = ?");
     vals.push(fields.googleCalendarEnabled ? 1 : 0);
+  }
+  vals.push(userId);
+  conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getUserById(userId);
+}
+
+export function updateUserGmail(
+  userId: string,
+  fields: {
+    gmailAccessToken?: string | null;
+    gmailRefreshToken?: string | null;
+    gmailConnected?: boolean;
+    gmailEmail?: string | null;
+  }
+): User | undefined {
+  const conn = db();
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (fields.gmailAccessToken !== undefined) {
+    sets.push("gmailAccessToken = ?");
+    vals.push(fields.gmailAccessToken);
+  }
+  if (fields.gmailRefreshToken !== undefined) {
+    sets.push("gmailRefreshToken = ?");
+    vals.push(fields.gmailRefreshToken);
+  }
+  if (fields.gmailConnected !== undefined) {
+    sets.push("gmailConnected = ?");
+    vals.push(fields.gmailConnected ? 1 : 0);
+  }
+  if (fields.gmailEmail !== undefined) {
+    sets.push("gmailEmail = ?");
+    vals.push(fields.gmailEmail);
+  }
+  vals.push(userId);
+  conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  return getUserById(userId);
+}
+
+export function updateUserOutlook(
+  userId: string,
+  fields: {
+    outlookAccessToken?: string | null;
+    outlookRefreshToken?: string | null;
+    outlookConnected?: boolean;
+    outlookEmail?: string | null;
+  }
+): User | undefined {
+  const conn = db();
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (fields.outlookAccessToken !== undefined) {
+    sets.push("outlookAccessToken = ?");
+    vals.push(fields.outlookAccessToken);
+  }
+  if (fields.outlookRefreshToken !== undefined) {
+    sets.push("outlookRefreshToken = ?");
+    vals.push(fields.outlookRefreshToken);
+  }
+  if (fields.outlookConnected !== undefined) {
+    sets.push("outlookConnected = ?");
+    vals.push(fields.outlookConnected ? 1 : 0);
+  }
+  if (fields.outlookEmail !== undefined) {
+    sets.push("outlookEmail = ?");
+    vals.push(fields.outlookEmail);
   }
   vals.push(userId);
   conn.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
@@ -2388,4 +2581,374 @@ export function deleteAutomation(userId: string, id: string): boolean {
     .prepare("DELETE FROM automations WHERE id = ? AND userId = ?")
     .run(id, userId);
   return result.changes > 0;
+}
+
+// ---------- Invoices / Quotes ----------
+
+function parseInvoiceRow(row: Record<string, unknown>): Invoice {
+  return {
+    ...row,
+    lineItems: JSON.parse((row.lineItems as string) || "[]"),
+  } as Invoice;
+}
+
+function nextInvoiceNumber(userId: string, type: InvoiceType): string {
+  const prefix = type === "quote" ? "Q" : "INV";
+  const count = db()
+    .prepare(
+      "SELECT COUNT(*) AS c FROM invoices WHERE userId = ? AND type = ?"
+    )
+    .get(userId, type) as { c: number };
+  return `${prefix}-${String(count.c + 1).padStart(4, "0")}`;
+}
+
+export function listInvoices(
+  userId: string,
+  opts?: { type?: InvoiceType; status?: InvoiceStatus }
+): Invoice[] {
+  let sql = "SELECT * FROM invoices WHERE userId = ?";
+  const params: unknown[] = [userId];
+  if (opts?.type) {
+    sql += " AND type = ?";
+    params.push(opts.type);
+  }
+  if (opts?.status) {
+    sql += " AND status = ?";
+    params.push(opts.status);
+  }
+  sql += " ORDER BY createdAt DESC";
+  const rows = db().prepare(sql).all(...params) as Record<string, unknown>[];
+  return rows.map(parseInvoiceRow);
+}
+
+export function getInvoice(userId: string, id: string): Invoice | undefined {
+  const row = db()
+    .prepare("SELECT * FROM invoices WHERE id = ? AND userId = ?")
+    .get(id, userId) as Record<string, unknown> | undefined;
+  return row ? parseInvoiceRow(row) : undefined;
+}
+
+export function getInvoicePublic(id: string): Invoice | undefined {
+  const row = db()
+    .prepare("SELECT * FROM invoices WHERE id = ?")
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? parseInvoiceRow(row) : undefined;
+}
+
+export function createInvoice(
+  userId: string,
+  input: {
+    type: InvoiceType;
+    contactId: string;
+    dealId?: string;
+    lineItems: LineItem[];
+    tax?: number;
+    notes?: string;
+    validUntil?: string;
+  }
+): Invoice {
+  const id = randomUUID();
+  const ts = now();
+  const number = nextInvoiceNumber(userId, input.type);
+  const subtotal = input.lineItems.reduce((s, li) => s + li.total, 0);
+  const tax = input.tax ?? 0;
+  const total = subtotal + tax;
+
+  db()
+    .prepare(
+      `INSERT INTO invoices (id, userId, dealId, contactId, type, number, status, lineItems, subtotal, tax, total, notes, validUntil, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      userId,
+      input.dealId || null,
+      input.contactId,
+      input.type,
+      number,
+      JSON.stringify(input.lineItems),
+      subtotal,
+      tax,
+      total,
+      input.notes || null,
+      input.validUntil || null,
+      ts,
+      ts
+    );
+
+  return getInvoice(userId, id)!;
+}
+
+export function updateInvoice(
+  userId: string,
+  id: string,
+  patch: {
+    status?: InvoiceStatus;
+    lineItems?: LineItem[];
+    tax?: number;
+    notes?: string;
+    validUntil?: string;
+    paidAt?: string;
+    sentAt?: string;
+  }
+): Invoice | undefined {
+  const existing = getInvoice(userId, id);
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+
+  if (patch.status !== undefined) {
+    sets.push("status = ?");
+    vals.push(patch.status);
+  }
+  if (patch.lineItems !== undefined) {
+    const subtotal = patch.lineItems.reduce((s, li) => s + li.total, 0);
+    const tax = patch.tax ?? existing.tax;
+    sets.push("lineItems = ?", "subtotal = ?", "tax = ?", "total = ?");
+    vals.push(JSON.stringify(patch.lineItems), subtotal, tax, subtotal + tax);
+  } else if (patch.tax !== undefined) {
+    sets.push("tax = ?", "total = ?");
+    vals.push(patch.tax, existing.subtotal + patch.tax);
+  }
+  if (patch.notes !== undefined) {
+    sets.push("notes = ?");
+    vals.push(patch.notes);
+  }
+  if (patch.validUntil !== undefined) {
+    sets.push("validUntil = ?");
+    vals.push(patch.validUntil);
+  }
+  if (patch.paidAt !== undefined) {
+    sets.push("paidAt = ?");
+    vals.push(patch.paidAt);
+  }
+  if (patch.sentAt !== undefined) {
+    sets.push("sentAt = ?");
+    vals.push(patch.sentAt);
+  }
+
+  vals.push(id, userId);
+  db()
+    .prepare(
+      `UPDATE invoices SET ${sets.join(", ")} WHERE id = ? AND userId = ?`
+    )
+    .run(...vals);
+
+  return getInvoice(userId, id);
+}
+
+// ---------- SMS Messages ----------
+
+export function listSmsMessages(
+  userId: string,
+  contactId?: string
+): SmsMessage[] {
+  if (contactId) {
+    return db()
+      .prepare(
+        "SELECT * FROM sms_messages WHERE userId = ? AND contactId = ? ORDER BY createdAt ASC"
+      )
+      .all(userId, contactId) as SmsMessage[];
+  }
+  return db()
+    .prepare("SELECT * FROM sms_messages WHERE userId = ? ORDER BY createdAt DESC")
+    .all(userId) as SmsMessage[];
+}
+
+export function listSmsConversations(userId: string): Array<{
+  contactId: string;
+  contactName: string;
+  contactPhone: string;
+  lastMessage: string;
+  lastAt: string;
+  unread: number;
+}> {
+  const rows = db()
+    .prepare(
+      `SELECT
+         m.contactId,
+         c.name AS contactName,
+         c.phone AS contactPhone,
+         m.body AS lastMessage,
+         m.createdAt AS lastAt,
+         0 AS unread
+       FROM sms_messages m
+       JOIN contacts c ON c.id = m.contactId
+       WHERE m.userId = ?
+         AND m.createdAt = (
+           SELECT MAX(m2.createdAt) FROM sms_messages m2
+           WHERE m2.userId = m.userId AND m2.contactId = m.contactId
+         )
+       ORDER BY m.createdAt DESC`
+    )
+    .all(userId) as Array<{
+    contactId: string;
+    contactName: string;
+    contactPhone: string;
+    lastMessage: string;
+    lastAt: string;
+    unread: number;
+  }>;
+  return rows;
+}
+
+export function createSmsMessage(input: {
+  userId: string;
+  contactId?: string;
+  direction: SmsDirection;
+  fromNumber: string;
+  toNumber: string;
+  body: string;
+  twilioSid?: string;
+  status?: string;
+}): SmsMessage {
+  const id = randomUUID();
+  const ts = now();
+  db()
+    .prepare(
+      `INSERT INTO sms_messages (id, userId, contactId, direction, fromNumber, toNumber, body, twilioSid, status, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.userId,
+      input.contactId || null,
+      input.direction,
+      input.fromNumber,
+      input.toNumber,
+      input.body,
+      input.twilioSid || null,
+      input.status || "delivered",
+      ts
+    );
+  return db()
+    .prepare("SELECT * FROM sms_messages WHERE id = ?")
+    .get(id) as SmsMessage;
+}
+
+export function findContactByPhone(
+  userId: string,
+  phone: string
+): Contact | undefined {
+  const normalized = phone.replace(/[^+\d]/g, "");
+  const contacts = listContacts(userId);
+  return contacts.find((c) => {
+    if (!c.phone) return false;
+    return c.phone.replace(/[^+\d]/g, "") === normalized;
+  });
+}
+
+// ---------- Webhook Endpoints ----------
+
+function parseWebhookEndpoint(row: Record<string, unknown>): WebhookEndpoint {
+  return {
+    ...row,
+    events: JSON.parse((row.events as string) || "[]"),
+    enabled: Boolean(row.enabled),
+  } as WebhookEndpoint;
+}
+
+export function listWebhookEndpoints(userId: string): WebhookEndpoint[] {
+  const rows = db()
+    .prepare(
+      "SELECT * FROM webhook_endpoints WHERE userId = ? ORDER BY createdAt DESC"
+    )
+    .all(userId) as Record<string, unknown>[];
+  return rows.map(parseWebhookEndpoint);
+}
+
+export function getWebhookEndpoint(
+  userId: string,
+  id: string
+): WebhookEndpoint | undefined {
+  const row = db()
+    .prepare("SELECT * FROM webhook_endpoints WHERE id = ? AND userId = ?")
+    .get(id, userId) as Record<string, unknown> | undefined;
+  return row ? parseWebhookEndpoint(row) : undefined;
+}
+
+export function createWebhookEndpoint(
+  userId: string,
+  input: { url: string; events: WebhookEvent[]; secret?: string }
+): WebhookEndpoint {
+  const id = randomUUID();
+  const ts = now();
+  db()
+    .prepare(
+      `INSERT INTO webhook_endpoints (id, userId, url, events, secret, enabled, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+    )
+    .run(id, userId, input.url, JSON.stringify(input.events), input.secret || null, ts, ts);
+  return getWebhookEndpoint(userId, id)!;
+}
+
+export function updateWebhookEndpoint(
+  userId: string,
+  id: string,
+  patch: { url?: string; events?: WebhookEvent[]; secret?: string; enabled?: boolean }
+): WebhookEndpoint | undefined {
+  const existing = getWebhookEndpoint(userId, id);
+  if (!existing) return undefined;
+
+  const sets: string[] = ["updatedAt = ?"];
+  const vals: unknown[] = [now()];
+  if (patch.url !== undefined) { sets.push("url = ?"); vals.push(patch.url); }
+  if (patch.events !== undefined) { sets.push("events = ?"); vals.push(JSON.stringify(patch.events)); }
+  if (patch.secret !== undefined) { sets.push("secret = ?"); vals.push(patch.secret); }
+  if (patch.enabled !== undefined) { sets.push("enabled = ?"); vals.push(patch.enabled ? 1 : 0); }
+
+  vals.push(id, userId);
+  db()
+    .prepare(`UPDATE webhook_endpoints SET ${sets.join(", ")} WHERE id = ? AND userId = ?`)
+    .run(...vals);
+  return getWebhookEndpoint(userId, id);
+}
+
+export function deleteWebhookEndpoint(userId: string, id: string): boolean {
+  const result = db()
+    .prepare("DELETE FROM webhook_endpoints WHERE id = ? AND userId = ?")
+    .run(id, userId);
+  return result.changes > 0;
+}
+
+export function getEnabledWebhookEndpoints(
+  userId: string,
+  event: string
+): WebhookEndpoint[] {
+  const all = listWebhookEndpoints(userId);
+  return all.filter(
+    (ep) => ep.enabled && (ep.events.length === 0 || ep.events.includes(event as WebhookEvent))
+  );
+}
+
+export function createWebhookDelivery(input: {
+  endpointId: string;
+  event: string;
+  payload: string;
+  status?: number;
+  response?: string;
+}): WebhookDelivery {
+  const id = randomUUID();
+  const ts = now();
+  db()
+    .prepare(
+      `INSERT INTO webhook_deliveries (id, endpointId, event, payload, status, response, attempts, lastAttempt, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    )
+    .run(id, input.endpointId, input.event, input.payload, input.status || null, input.response || null, ts, ts);
+  return db()
+    .prepare("SELECT * FROM webhook_deliveries WHERE id = ?")
+    .get(id) as WebhookDelivery;
+}
+
+export function listRecentDeliveries(
+  endpointId: string,
+  limit: number = 20
+): WebhookDelivery[] {
+  return db()
+    .prepare(
+      "SELECT * FROM webhook_deliveries WHERE endpointId = ? ORDER BY createdAt DESC LIMIT ?"
+    )
+    .all(endpointId, limit) as WebhookDelivery[];
 }

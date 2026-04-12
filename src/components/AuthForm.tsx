@@ -87,7 +87,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
         setError(ERROR_COPY[code] || "Something went wrong. Try again.");
         return;
       }
-      router.push("/");
+      router.push(isSignup ? "/onboarding" : "/");
       router.refresh();
     } catch {
       setError("Network error. Check your connection and try again.");

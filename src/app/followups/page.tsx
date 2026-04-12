@@ -2,7 +2,7 @@ import { FollowUpActions } from "@/components/FollowUpActions";
 import { DraftReviewList } from "@/components/DraftReviewList";
 import { getContact, getDeal, listFollowUps } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
-import { isPostmarkConfigured } from "@/lib/postmark";
+import { isEmailConfigured } from "@/lib/sendgrid";
 import { isTwilioConfigured } from "@/lib/twilio";
 import { requireUser } from "@/lib/auth";
 import type { Metadata } from "next";
@@ -19,7 +19,7 @@ export default function FollowUpsPage() {
   const followUps = listFollowUps(user.id);
   const drafts = followUps.filter((f) => f.status === "draft");
   const rest = followUps.filter((f) => f.status !== "draft");
-  const canSend = isPostmarkConfigured();
+  const canSend = isEmailConfigured();
   const canSendSms = isTwilioConfigured();
 
   const draftData = drafts.map((f) => {

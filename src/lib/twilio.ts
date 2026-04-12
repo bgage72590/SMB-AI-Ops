@@ -1,5 +1,5 @@
 // Thin Twilio client. We hit the REST API directly with fetch (same pattern
-// as postmark.ts) so we don't pull in another dependency for one endpoint.
+// as sendgrid.ts) so we don't pull in another dependency for one endpoint.
 //
 // Env vars:
 //   TWILIO_ACCOUNT_SID   — your Twilio account SID (ACxxxx)
