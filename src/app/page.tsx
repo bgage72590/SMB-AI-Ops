@@ -231,6 +231,7 @@ export default function DashboardPage() {
                           id={f.id}
                           currentStatus={f.status}
                           canSend={canSend}
+                          sentAt={f.sentAt}
                         />
                       </div>
                     </li>

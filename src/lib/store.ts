@@ -180,6 +180,8 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "deals", "userId", "TEXT");
   addColumnIfMissing(conn, "emails", "userId", "TEXT");
   addColumnIfMissing(conn, "followUps", "userId", "TEXT");
+  addColumnIfMissing(conn, "followUps", "sentAt", "TEXT");
+  addColumnIfMissing(conn, "followUps", "sentMessageId", "TEXT");
 
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
@@ -415,6 +417,8 @@ interface FollowUpRow {
   status: FollowUp["status"];
   createdAt: string;
   scheduledFor: string | null;
+  sentAt: string | null;
+  sentMessageId: string | null;
 }
 
 function rowToFollowUp(row: FollowUpRow): FollowUp {
@@ -430,6 +434,8 @@ function rowToFollowUp(row: FollowUpRow): FollowUp {
     status: row.status,
     createdAt: row.createdAt,
     scheduledFor: row.scheduledFor ?? undefined,
+    sentAt: row.sentAt ?? undefined,
+    sentMessageId: row.sentMessageId ?? undefined,
   };
 }
 
@@ -503,8 +509,8 @@ function insertEmailRow(conn: Database.Database, e: Email): void {
 function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
   conn
     .prepare(
-      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor)
-       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor)`
+      `INSERT INTO followUps (id, userId, emailId, dealId, contactId, subject, draft, reason, status, createdAt, scheduledFor, sentAt, sentMessageId)
+       VALUES (@id, @userId, @emailId, @dealId, @contactId, @subject, @draft, @reason, @status, @createdAt, @scheduledFor, @sentAt, @sentMessageId)`
     )
     .run({
       id: f.id,
@@ -518,6 +524,8 @@ function insertFollowUpRow(conn: Database.Database, f: FollowUp): void {
       status: f.status,
       createdAt: f.createdAt,
       scheduledFor: f.scheduledFor ?? null,
+      sentAt: f.sentAt ?? null,
+      sentMessageId: f.sentMessageId ?? null,
     });
 }
 
@@ -1383,6 +1391,11 @@ export function updateFollowUp(
       patch.scheduledFor !== undefined
         ? patch.scheduledFor ?? null
         : existing.scheduledFor,
+    sentAt: patch.sentAt !== undefined ? patch.sentAt ?? null : existing.sentAt,
+    sentMessageId:
+      patch.sentMessageId !== undefined
+        ? patch.sentMessageId ?? null
+        : existing.sentMessageId,
   };
 
   conn
@@ -1395,7 +1408,9 @@ export function updateFollowUp(
          draft = @draft,
          reason = @reason,
          status = @status,
-         scheduledFor = @scheduledFor
+         scheduledFor = @scheduledFor,
+         sentAt = @sentAt,
+         sentMessageId = @sentMessageId
        WHERE id = @id AND userId = @userId`
     )
     .run({
@@ -1409,6 +1424,8 @@ export function updateFollowUp(
       reason: next.reason,
       status: next.status,
       scheduledFor: next.scheduledFor,
+      sentAt: next.sentAt,
+      sentMessageId: next.sentMessageId,
     });
 
   return rowToFollowUp(next);

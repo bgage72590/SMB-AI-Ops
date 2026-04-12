@@ -3,14 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui";
+import { formatRelative } from "@/lib/format";
 
 interface Props {
   id: string;
   currentStatus: "draft" | "approved" | "sent" | "dismissed";
   canSend: boolean;
+  sentAt?: string;
 }
 
-export function FollowUpActions({ id, currentStatus, canSend }: Props) {
+export function FollowUpActions({ id, currentStatus, canSend, sentAt }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +60,14 @@ export function FollowUpActions({ id, currentStatus, canSend }: Props) {
   }
 
   if (currentStatus === "sent") {
-    return <span className="text-xs text-success font-medium">Sent</span>;
+    return (
+      <span
+        className="text-xs text-success font-medium"
+        title={sentAt ? new Date(sentAt).toLocaleString() : undefined}
+      >
+        Sent{sentAt ? ` ${formatRelative(sentAt)}` : ""}
+      </span>
+    );
   }
   if (currentStatus === "dismissed") {
     return <span className="text-xs text-fg-subtle">Dismissed</span>;

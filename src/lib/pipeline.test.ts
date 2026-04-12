@@ -10,9 +10,11 @@ import {
   getDeal,
   findContactByEmail,
   findOpenDealForContact,
+  getFollowUp,
   listEmails,
   listFollowUps,
   listDealsForContact,
+  updateFollowUp,
 } from "./store";
 import { processEmail } from "./pipeline";
 
@@ -209,5 +211,38 @@ describe("processEmail (heuristic mode)", () => {
     if (result.dealId) {
       expect(getDeal(userId, result.dealId)).toBeUndefined();
     }
+  });
+});
+
+describe("updateFollowUp sent metadata", () => {
+  it("persists sentAt and sentMessageId and survives a reload", async () => {
+    const email = createEmail(userId, {
+      from: "lee@example.test",
+      fromName: "Lee",
+      to: "owner@yourshop.com",
+      subject: "Quote question",
+      body: "Hi — wondering about pricing for a small job.",
+    });
+    await processEmail(userId, email);
+
+    const [draft] = listFollowUps(userId);
+    expect(draft).toBeTruthy();
+
+    const sentAt = "2026-04-12T15:30:00.000Z";
+    const messageId = "postmark-abc-123";
+    const updated = updateFollowUp(userId, draft.id, {
+      status: "sent",
+      sentAt,
+      sentMessageId: messageId,
+    });
+
+    expect(updated?.status).toBe("sent");
+    expect(updated?.sentAt).toBe(sentAt);
+    expect(updated?.sentMessageId).toBe(messageId);
+
+    // Reload from DB to make sure the columns actually round-trip.
+    const reloaded = getFollowUp(userId, draft.id);
+    expect(reloaded?.sentAt).toBe(sentAt);
+    expect(reloaded?.sentMessageId).toBe(messageId);
   });
 });

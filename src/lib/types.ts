@@ -141,6 +141,10 @@ export interface FollowUp {
   status: "draft" | "approved" | "sent" | "dismissed";
   createdAt: string;
   scheduledFor?: string;
+  /** ISO timestamp when the follow-up was actually dispatched. */
+  sentAt?: string;
+  /** Message ID returned by the email provider (e.g. Postmark). */
+  sentMessageId?: string;
 }
 
 export interface StoreShape {

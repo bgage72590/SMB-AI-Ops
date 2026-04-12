@@ -60,8 +60,13 @@ export async function POST(request: Request) {
       to: contact.email,
       subject: followUp.subject,
       body: followUp.draft,
+      replyTo: user.inboundAddress,
     });
-    const updated = updateFollowUp(user.id, followUp.id, { status: "sent" });
+    const updated = updateFollowUp(user.id, followUp.id, {
+      status: "sent",
+      sentAt: new Date().toISOString(),
+      sentMessageId: result.messageId,
+    });
     return NextResponse.json({ followUp: updated, messageId: result.messageId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "send_failed";
