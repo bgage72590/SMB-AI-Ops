@@ -1,0 +1,33 @@
+name: SMBAIOps
+options:
+  bundleIdPrefix: com.smbaiops
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+targets:
+  SMBAIOps:
+    type: application
+    platform: iOS
+    sources:
+      - SMBAIOps
+    settings:
+      base:
+        INFOPLIST_FILE: SMBAIOps/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.smbaiops.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 1
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: false
+        DEVELOPMENT_TEAM: ""
+schemes:
+  SMBAIOps:
+    build:
+      targets:
+        SMBAIOps: all
+    run:
+      config: Debug
+    archive:
+      config: Release

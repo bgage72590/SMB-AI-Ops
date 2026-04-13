@@ -110,11 +110,16 @@ export function verifyInboundAuth(
     }
   }
 
-  // Fallback: shared secret via Basic Auth or query param
+  // Fallback: shared secret via Bearer token, Basic Auth, or query param
   const secret = process.env.SENDGRID_INBOUND_SECRET;
   if (!secret) return false;
 
   const auth = request.headers.get("authorization");
+  if (auth && auth.startsWith("Bearer ")) {
+    const token = auth.slice(7);
+    if (timingSafeEqual(token, secret)) return true;
+  }
+
   if (auth && auth.startsWith("Basic ")) {
     try {
       const decoded = Buffer.from(auth.slice(6), "base64").toString("utf-8");
