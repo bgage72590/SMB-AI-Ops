@@ -430,12 +430,17 @@ function migrateLegacyStageValues(conn: Database.Database): void {
   }
 }
 
+const VALID_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 function addColumnIfMissing(
   conn: Database.Database,
   table: string,
   column: string,
   type: string
 ): void {
+  if (!VALID_IDENTIFIER.test(table) || !VALID_IDENTIFIER.test(column) || !VALID_IDENTIFIER.test(type)) {
+    throw new Error(`Invalid identifier in addColumnIfMissing: ${table}.${column} ${type}`);
+  }
   const cols = conn
     .prepare(`PRAGMA table_info(${table})`)
     .all() as Array<{ name: string }>;

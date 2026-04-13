@@ -70,16 +70,18 @@ export async function POST(request: Request) {
     body,
   });
 
+  const allowedOrigin = process.env.WIDGET_ALLOWED_ORIGIN || "*";
   const response = NextResponse.json({ ok: true });
-  response.headers.set("Access-Control-Allow-Origin", "*");
+  response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
   response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type");
   return response;
 }
 
 export async function OPTIONS() {
+  const allowedOrigin = process.env.WIDGET_ALLOWED_ORIGIN || "*";
   const response = new NextResponse(null, { status: 204 });
-  response.headers.set("Access-Control-Allow-Origin", "*");
+  response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
   response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type");
   return response;

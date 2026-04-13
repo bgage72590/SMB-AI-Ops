@@ -14,6 +14,14 @@ interface ModelPricing {
   cacheWrite: number;
 }
 
+const ALLOWED_MODELS = new Set([
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5-20251001",
+]);
+
+const VALID_MODEL_PATTERN = /^claude-[a-z0-9-]+$/;
+
 const PRICING: Record<string, ModelPricing> = {
   "claude-opus-4-6": {
     input: 15,
@@ -96,11 +104,14 @@ export function logAiUsage(input: {
   usage: UsageLike;
 }): void {
   try {
-    const cost = estimateCost(input.model, input.usage);
+    const model = ALLOWED_MODELS.has(input.model) ? input.model
+      : VALID_MODEL_PATTERN.test(input.model) ? input.model
+      : "unknown";
+    const cost = estimateCost(model, input.usage);
     recordAiUsage({
       userId: input.userId,
       kind: input.kind,
-      model: input.model,
+      model,
       inputTokens: input.usage.input_tokens ?? 0,
       outputTokens: input.usage.output_tokens ?? 0,
       cachedInputTokens: input.usage.cache_read_input_tokens ?? 0,

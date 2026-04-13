@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { dataDir } from "./db";
@@ -52,7 +52,7 @@ export async function runBackup(): Promise<BackupResult> {
   const backupPath = path.join(dataDir(), backupFileName);
 
   try {
-    execSync(`sqlite3 "${dbPath}" ".backup '${backupPath}'"`, {
+    execFileSync("sqlite3", [dbPath, `.backup '${backupPath}'`], {
       timeout: 30_000,
     });
 
@@ -92,9 +92,9 @@ export async function runBackup(): Promise<BackupResult> {
     return { ok: false, error: message };
   } finally {
     try {
-      if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+      fs.unlinkSync(backupPath);
     } catch {
-      // best-effort cleanup
+      // best-effort cleanup — file may not exist
     }
   }
 }

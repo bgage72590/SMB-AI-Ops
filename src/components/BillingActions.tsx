@@ -9,6 +9,20 @@ interface Props {
   planTier?: PlanTier;
 }
 
+const TRUSTED_REDIRECT_DOMAINS = [
+  "checkout.stripe.com",
+  "billing.stripe.com",
+];
+
+function isAllowedRedirect(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return TRUSTED_REDIRECT_DOMAINS.some((d) => parsed.hostname === d || parsed.hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
 const PRICE_ENV: Record<string, string | undefined> = {};
 
 export function BillingActions({ action, planTier }: Props) {
@@ -29,7 +43,8 @@ export function BillingActions({ action, planTier }: Props) {
         throw new Error(data.error || `HTTP ${response.status}`);
       }
       const { url } = await response.json();
-      if (url) window.location.href = url;
+      if (url && isAllowedRedirect(url)) window.location.href = url;
+      else if (url) throw new Error("Unexpected redirect URL");
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed");
     } finally {
@@ -50,7 +65,8 @@ export function BillingActions({ action, planTier }: Props) {
         throw new Error(data.error || `HTTP ${response.status}`);
       }
       const { url } = await response.json();
-      if (url) window.location.href = url;
+      if (url && isAllowedRedirect(url)) window.location.href = url;
+      else if (url) throw new Error("Unexpected redirect URL");
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed");
     } finally {

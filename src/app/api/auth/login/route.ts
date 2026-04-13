@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
-import { AuthError, SESSION_COOKIE, login } from "@/lib/auth";
+import { AuthError, SESSION_COOKIE, login, logoutSession } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -30,6 +31,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const oldSessionId = cookies().get(SESSION_COOKIE)?.value;
+    if (oldSessionId) {
+      try { logoutSession(oldSessionId); } catch {}
+    }
     const result = login(parsed.data);
     const response = NextResponse.json({
       user: { id: result.user.id, email: result.user.email, name: result.user.name },
