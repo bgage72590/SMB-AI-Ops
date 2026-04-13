@@ -44,10 +44,13 @@ final class APIClient: Sendable {
 
     private init() {
         let config = URLSessionConfiguration.default
-        config.httpCookieAcceptPolicy = .always
+        config.httpCookieAcceptPolicy = .onlyFromMainDocumentDomain
         config.httpShouldSetCookies = true
-        config.httpCookieStorage = .shared
+        let cookieStorage = HTTPCookieStorage.shared
+        cookieStorage.cookieAcceptPolicy = .onlyFromMainDocumentDomain
+        config.httpCookieStorage = cookieStorage
         config.timeoutIntervalForRequest = 30
+        config.tlsMinimumSupportedProtocolVersion = .TLSv12
         session = URLSession(configuration: config)
     }
 

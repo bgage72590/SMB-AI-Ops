@@ -10,6 +10,10 @@ final class AuthManager {
 
     private let api = APIClient.shared
     private let userKey = "cached_user"
+    private var failedLoginAttempts = 0
+    private var lastFailedLogin: Date?
+    private let maxAttempts = 5
+    private let lockoutDuration: TimeInterval = 60
 
     init() {
         if let data = UserDefaults.standard.data(forKey: userKey),
@@ -34,15 +38,49 @@ final class AuthManager {
     }
 
     func login(email: String, password: String) async throws {
-        let response: AuthResponse = try await api.post("/api/auth/login", body: LoginRequest(email: email, password: password))
-        currentUser = response.user
-        cacheUser(response.user)
+        try checkBruteForce()
+        api.clearCookies()
+        do {
+            let response: AuthResponse = try await api.post("/api/auth/login", body: LoginRequest(email: email, password: password))
+            failedLoginAttempts = 0
+            lastFailedLogin = nil
+            currentUser = response.user
+            cacheUser(response.user)
+        } catch {
+            failedLoginAttempts += 1
+            lastFailedLogin = Date()
+            throw error
+        }
     }
 
     func signup(name: String, email: String, password: String) async throws {
-        let response: AuthResponse = try await api.post("/api/auth/signup", body: SignupRequest(name: name, email: email, password: password))
-        currentUser = response.user
-        cacheUser(response.user)
+        try checkBruteForce()
+        api.clearCookies()
+        do {
+            let response: AuthResponse = try await api.post("/api/auth/signup", body: SignupRequest(name: name, email: email, password: password))
+            failedLoginAttempts = 0
+            lastFailedLogin = nil
+            currentUser = response.user
+            cacheUser(response.user)
+        } catch {
+            failedLoginAttempts += 1
+            lastFailedLogin = Date()
+            throw error
+        }
+    }
+
+    private func checkBruteForce() throws {
+        if failedLoginAttempts >= maxAttempts,
+           let lastFailed = lastFailedLogin,
+           Date().timeIntervalSince(lastFailed) < lockoutDuration {
+            let remaining = Int(lockoutDuration - Date().timeIntervalSince(lastFailed))
+            throw APIError.httpError(429, "Too many attempts. Try again in \(remaining)s.")
+        }
+        if let lastFailed = lastFailedLogin,
+           Date().timeIntervalSince(lastFailed) >= lockoutDuration {
+            failedLoginAttempts = 0
+            lastFailedLogin = nil
+        }
     }
 
     func logout() async {
