@@ -438,8 +438,11 @@ function addColumnIfMissing(
   column: string,
   type: string
 ): void {
-  if (!VALID_IDENTIFIER.test(table) || !VALID_IDENTIFIER.test(column) || !VALID_IDENTIFIER.test(type)) {
-    throw new Error(`Invalid identifier in addColumnIfMissing: ${table}.${column} ${type}`);
+  if (!VALID_IDENTIFIER.test(table) || !VALID_IDENTIFIER.test(column)) {
+    throw new Error(`Invalid identifier in addColumnIfMissing: ${table}.${column}`);
+  }
+  if (!/^[A-Z]+(?:\s+(?:NOT\s+NULL|DEFAULT\s+\S+|PRIMARY\s+KEY))*$/i.test(type)) {
+    throw new Error(`Invalid column type in addColumnIfMissing: ${type}`);
   }
   const cols = conn
     .prepare(`PRAGMA table_info(${table})`)
