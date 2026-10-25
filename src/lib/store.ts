@@ -2245,7 +2245,7 @@ export function listAiUsage(userId: string, limit = 100): AiUsageRow[] {
 /**
  * Load the sample contacts/deals/emails into a user's workspace. Called
  * automatically the first time a user signs up so there's something to
- * click on, and also by `/api/reset` to restore a user to a clean seed.
+ * click on.
  */
 export function seedWorkspace(userId: string): void {
   const conn = db();
@@ -2257,31 +2257,6 @@ export function seedWorkspace(userId: string): void {
     for (const f of seed.followUps) insertFollowUpRow(conn, f);
   });
   tx();
-}
-
-export function resetStore(userId: string): StoreShape {
-  const conn = db();
-  const tx = conn.transaction(() => {
-    // Cascade-delete is already wired on deals(contactId); we still nuke
-    // dependent rows explicitly so emails/followUps (which don't FK to
-    // contacts) don't dangle.
-    conn.prepare("DELETE FROM followUps WHERE userId = ?").run(userId);
-    conn.prepare("DELETE FROM emails WHERE userId = ?").run(userId);
-    conn.prepare("DELETE FROM deals WHERE userId = ?").run(userId);
-    conn.prepare("DELETE FROM contacts WHERE userId = ?").run(userId);
-  });
-  tx();
-  seedWorkspace(userId);
-  return getSnapshot(userId);
-}
-
-export function getSnapshot(userId: string): StoreShape {
-  return {
-    contacts: listContacts(userId),
-    deals: listDeals(userId),
-    emails: listEmails(userId),
-    followUps: listFollowUps(userId),
-  };
 }
 
 // ---------- Sender blocklist ----------

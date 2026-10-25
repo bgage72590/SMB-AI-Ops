@@ -14,11 +14,14 @@ export default async function WidgetSettingsPage() {
   const configured = isWidgetConfigured();
   const token = configured ? generateWidgetToken(user.id) : null;
 
-  const origin =
+  // The embed runs on the customer's site, so it needs this app's public
+  // URL. (This used to be `A || B ? x : y`, which parses as `(A || B) ? x
+  // : y` and produced https://undefined anywhere but Vercel.)
+  const origin = (
+    process.env.APP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
 
   const snippet = token
     ? `<!-- SMB AI Ops Chat Widget -->
