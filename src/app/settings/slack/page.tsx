@@ -5,6 +5,8 @@ import { getUserById } from "@/lib/store";
 import { isSlackAppConfigured } from "@/lib/slack";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { SlackActions } from "@/components/SlackActions";
+import { hasFeature } from "@/lib/plans";
+import { UpgradeNotice } from "@/components/UpgradeNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +70,12 @@ export default async function SlackPage(props: {
             </p>
           )}
 
-          {appConfigured && <SlackActions channelName={fresh.slackChannelName} />}
+          {appConfigured &&
+            (hasFeature(fresh, "slack_integration") || fresh.slackChannelName ? (
+              <SlackActions channelName={fresh.slackChannelName} />
+            ) : (
+              <UpgradeNotice feature="slack_integration" label="Slack" />
+            ))}
         </CardBody>
       </Card>
     </main>

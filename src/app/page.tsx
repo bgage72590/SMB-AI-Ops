@@ -30,6 +30,7 @@ import { checkTrial } from "@/lib/trial";
 import { TrialBanner } from "@/components/TrialBanner";
 import { VerifyEmailBanner } from "@/components/VerifyEmailBanner";
 import { AskBox } from "@/components/AskBox";
+import { hasFeature } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -277,7 +278,7 @@ export default async function DashboardPage(props: {
                           currentStatus={f.status}
                           canSend={canSend}
                           sentAt={f.sentAt}
-                          hasIcs={!!f.icsData}
+                          hasIcs={!!f.icsData && hasFeature(user, "calendar_ics")}
                         />
                       </div>
                     </li>
@@ -344,17 +345,19 @@ export default async function DashboardPage(props: {
       </section>
 
       {/* Ask AI — compact inline bar */}
-      <Card className="overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent text-xs font-bold shrink-0">
-            AI
-          </span>
-          <span className="text-sm font-medium text-fg">Ask your AI office manager</span>
-        </div>
-        <CardBody>
-          <AskBox />
-        </CardBody>
-      </Card>
+      {hasFeature(user, "ask_box") && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent text-xs font-bold shrink-0">
+              AI
+            </span>
+            <span className="text-sm font-medium text-fg">Ask your AI office manager</span>
+          </div>
+          <CardBody>
+            <AskBox />
+          </CardBody>
+        </Card>
+      )}
 
       {/* Top open jobs */}
       {hotJobs.length > 0 && (

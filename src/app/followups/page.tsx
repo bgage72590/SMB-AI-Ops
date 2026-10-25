@@ -6,6 +6,7 @@ import { isEmailConfigured } from "@/lib/sendgrid";
 import { canSendSms as canSendSmsFor } from "@/lib/twilio";
 import { requireUser } from "@/lib/auth";
 import type { Metadata } from "next";
+import { hasFeature } from "@/lib/plans";
 
 export const metadata: Metadata = {
   title: "Follow-ups | SMB AI Ops",
@@ -34,7 +35,7 @@ export default async function FollowUpsPage() {
       draft: f.draft,
       reason: f.reason,
       createdAt: formatRelative(f.createdAt),
-      hasIcs: !!f.icsData,
+      hasIcs: !!f.icsData && hasFeature(user, "calendar_ics"),
       channel: f.channel ?? "email",
     };
   });
@@ -97,7 +98,7 @@ export default async function FollowUpsPage() {
                     currentStatus={f.status}
                     canSend={f.channel === "sms" ? canSendSms : canSend}
                     sentAt={f.sentAt}
-                    hasIcs={!!f.icsData}
+                    hasIcs={!!f.icsData && hasFeature(user, "calendar_ics")}
                     channel={f.channel}
                   />
                 </div>
