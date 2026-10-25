@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // to recompute on every keystroke.
 export async function GET(request: Request) {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     const q = new URL(request.url).searchParams.get("q") ?? "";
     const results = searchWorkspace(user.id, q);
     return NextResponse.json({ results });

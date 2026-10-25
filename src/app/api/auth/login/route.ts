@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const oldSessionId = cookies().get(SESSION_COOKIE)?.value;
+    const oldSessionId = (await cookies()).get(SESSION_COOKIE)?.value;
     if (oldSessionId) {
       try { logoutSession(oldSessionId); } catch {}
     }

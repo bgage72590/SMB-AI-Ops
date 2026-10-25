@@ -6,18 +6,8 @@ import Database from "better-sqlite3";
 // rewrite when we move off SQLite. Everything else in the app treats
 // `getConnection()` as an opaque handle passed into `src/lib/store.ts`.
 //
-// When DATABASE_URL is set, the Postgres backend is available. The actual
-// swap happens in db-postgres.ts — this file stays SQLite-only so we can
-// run both side by side during the transition. See docs/postgres-migration.md.
-
-/**
- * True when DATABASE_URL is set and the app should use Postgres.
- * During the migration window we read from SQLite and dual-write to
- * Postgres; once validated, flip this to skip SQLite entirely.
- */
-export function isPostgresEnabled(): boolean {
-  return process.env.DB_BACKEND === "postgres" && Boolean(process.env.DATABASE_URL);
-}
+// SQLite is the only backend. The app runs as one long-lived Node process
+// with SMB_AI_OPS_DATA_DIR on a persistent disk. See docs/deployment.md.
 
 /**
  * Resolve the directory where the SQLite DB lives. Reads
@@ -25,7 +15,7 @@ export function isPostgresEnabled(): boolean {
  * override it per-suite without relying on module reloading.
  */
 export function dataDir(): string {
-  return process.env.SMB_AI_OPS_DATA_DIR || path.join(process.cwd(), "data");
+  return process.env.SMB_AI_OPS_DATA_DIR || path.join(/* turbopackIgnore: true */ process.cwd(), "data");
 }
 
 let _conn: Database.Database | null = null;
@@ -51,7 +41,7 @@ export function getConnection(options: ConnectionOptions = {}): Database.Databas
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  const conn = new Database(path.join(dir, "store.sqlite"));
+  const conn = new Database(path.join(/* turbopackIgnore: true */ dir, "store.sqlite"));
   if (options.onOpen) options.onOpen(conn);
   _conn = conn;
   return conn;

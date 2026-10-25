@@ -27,12 +27,17 @@ processing runs cheaply.
 
 ## Stack
 
-- **Next.js 14** (App Router, Server Components) + **TypeScript**
+- **Next.js 16** (App Router, Server Components) + **React 19** + **TypeScript**, on **Node 24 LTS** (Node 22+ required)
 - **Tailwind CSS** for styling
 - **@anthropic-ai/sdk** for the AI layer
 - **Postmark** for real email in (inbound webhook) and out (follow-up send)
 - **SQLite** via `better-sqlite3` for persistence — WAL mode, race-safe
-  upserts, one file at `data/store.sqlite`. Migrations run on boot.
+  upserts, one file at `data/store.sqlite` (or `$SMB_AI_OPS_DATA_DIR`).
+  Migrations run on boot.
+- **In-process scheduler** (`src/lib/scheduler.ts`) for the background
+  jobs, on by default in production. The app runs as one long-lived Node
+  server on a VM with a persistent disk — see
+  [docs/deployment.md](docs/deployment.md).
 - **Cookie-based auth** — multi-user, scrypt-hashed passwords, opaque
   session tokens stored in the DB (no JWTs, sessions are revocable). See
   `src/lib/auth.ts`.
@@ -202,7 +207,8 @@ The MVP is deliberately narrow. Obvious next steps:
 - Two-way calendar integration (actually propose times from a live calendar,
   not just hand out a booking link).
 - Multi-user support + auth.
-- Graduate persistence from SQLite to Postgres when multi-user lands.
+- Graduate persistence from SQLite to Postgres if one server stops being
+  enough (plan in [docs/postgres-migration.md](docs/postgres-migration.md)).
 
 ## License
 

@@ -1,7 +1,6 @@
-// Tiny helper for guarding cron-style API routes. We accept either a
-// Bearer header or a ?secret= query param so the route works with every
-// common scheduler (Vercel cron sends a Bearer, GitHub Actions can do
-// either, a plain `curl` either works too).
+// Tiny helper for guarding the manual /api/jobs/* triggers (the jobs
+// themselves run from src/lib/scheduler.ts). We accept either a Bearer
+// header or a ?secret= query param so a plain `curl` works either way.
 //
 // If CRON_SECRET is not configured at all, the route is left wide open
 // in development only — in production we fail closed so nothing can

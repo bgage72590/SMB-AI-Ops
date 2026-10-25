@@ -6,9 +6,9 @@ import { DomainVerifier } from "@/components/DomainVerifier";
 
 export const dynamic = "force-dynamic";
 
-export default function DomainPage() {
+export default async function DomainPage() {
   try {
-    requireUser();
+    await requireUser();
   } catch {
     redirect("/login");
   }

@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 // Dev helper: wipe the current user's workspace back to the seed state.
 export async function POST() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     const fresh = resetStore(user.id);
     return NextResponse.json({ ok: true, snapshot: fresh });
   } catch (err) {

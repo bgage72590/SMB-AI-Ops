@@ -18,7 +18,7 @@ const SendSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     const url = new URL(request.url);
     const contactId = url.searchParams.get("contactId");
     if (contactId) {
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });

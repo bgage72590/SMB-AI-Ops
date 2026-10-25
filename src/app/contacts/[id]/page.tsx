@@ -20,7 +20,7 @@ import type { Email, FollowUp, Deal } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 interface Props {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 type TimelineEntry =
@@ -28,8 +28,9 @@ type TimelineEntry =
   | { kind: "followup"; at: string; followUp: FollowUp }
   | { kind: "deal"; at: string; deal: Deal };
 
-export default function ClientDetailPage({ params }: Props) {
-  const user = requireUser();
+export default async function ClientDetailPage(props: Props) {
+  const params = await props.params;
+  const user = await requireUser();
   const contact = getContact(user.id, params.id);
   if (!contact) notFound();
 

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.redirect(new URL("/login", request.url));

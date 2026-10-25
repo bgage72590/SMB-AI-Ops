@@ -31,12 +31,11 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function InvoicesPage({
-  searchParams,
-}: {
-  searchParams?: { tab?: string };
+export default async function InvoicesPage(props: {
+  searchParams?: Promise<{ tab?: string }>;
 }) {
-  const user = requireUser();
+  const searchParams = await props.searchParams;
+  const user = await requireUser();
   const tab = searchParams?.tab === "invoices" ? "invoices" : "quotes";
   const all = listInvoices(user.id, {
     type: tab === "invoices" ? "invoice" : "quote",

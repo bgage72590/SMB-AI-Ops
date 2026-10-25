@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function LoginPage() {
-  if (getCurrentUser()) redirect("/");
+export default async function LoginPage() {
+  if (await getCurrentUser()) redirect("/");
   return <AuthForm mode="login" />;
 }

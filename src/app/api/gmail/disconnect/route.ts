@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 export async function POST() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     updateUserGmail(user.id, {
       gmailAccessToken: null,
       gmailRefreshToken: null,

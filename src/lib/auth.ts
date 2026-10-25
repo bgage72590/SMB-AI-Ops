@@ -198,8 +198,8 @@ function issueSession(userId: string): {
  * Resolve the current user from the session cookie. Returns null if the
  * caller isn't signed in, if the session was revoked, or if it's expired.
  */
-export function getCurrentUser(): User | null {
-  const sessionId = cookies().get(SESSION_COOKIE)?.value;
+export async function getCurrentUser(): Promise<User | null> {
+  const sessionId = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!sessionId) return null;
 
   const session = getSession(sessionId);
@@ -224,16 +224,16 @@ export function getCurrentUser(): User | null {
  * AuthError("unauthorized") and return 401 so they don't accidentally
  * issue a redirect response to fetch() callers.
  */
-export function requireUser(options: { redirectTo?: string } = {}): User {
-  const user = getCurrentUser();
+export async function requireUser(options: { redirectTo?: string } = {}): Promise<User> {
+  const user = await getCurrentUser();
   if (user) return user;
   if (typeof options.redirectTo === "string") redirect(options.redirectTo);
   redirect("/login");
 }
 
 // For API routes: same idea, but throws instead of redirecting.
-export function requireUserForApi(): User {
-  const user = getCurrentUser();
+export async function requireUserForApi(): Promise<User> {
+  const user = await getCurrentUser();
   if (!user) throw new AuthError("unauthorized");
   return user;
 }

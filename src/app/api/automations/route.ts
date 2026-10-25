@@ -49,7 +49,7 @@ const DeleteSchema = z.object({
 
 export async function GET() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     return NextResponse.json({ automations: listAutomations(user.id) });
   } catch (err) {
     if (err instanceof AuthError) {
@@ -62,7 +62,7 @@ export async function GET() {
 export async function POST(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });
@@ -110,7 +110,7 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });

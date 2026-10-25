@@ -18,7 +18,7 @@ const SendSchema = z.object({ id: z.string().min(1) });
 export async function POST(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });

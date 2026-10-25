@@ -14,10 +14,10 @@ export const metadata: Metadata = {
   description: "Configure your workspace.",
 };
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

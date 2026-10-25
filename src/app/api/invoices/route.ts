@@ -43,7 +43,7 @@ const UpdateSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     const url = new URL(request.url);
     const type = url.searchParams.get("type") as InvoiceType | null;
     const status = url.searchParams.get("status") as InvoiceStatus | null;
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });

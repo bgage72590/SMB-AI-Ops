@@ -15,7 +15,7 @@ const CheckSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    requireUserForApi();
+    await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });

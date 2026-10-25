@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     if (!isGmailOAuthConfigured()) {
       return NextResponse.json(
         { error: "not_configured", message: "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." },

@@ -38,12 +38,11 @@ function applyFilter(emails: Email[], filter: Filter): Email[] {
 
 const PER_PAGE = 20;
 
-export default function InboxPage({
-  searchParams,
-}: {
-  searchParams?: { filter?: string; page?: string; view?: string };
+export default async function InboxPage(props: {
+  searchParams?: Promise<{ filter?: string; page?: string; view?: string }>;
 }) {
-  const user = requireUser();
+  const searchParams = await props.searchParams;
+  const user = await requireUser();
   const emails = listEmails(user.id);
   const unprocessed = emails.filter((e) => !e.processed);
   const processed = emails.filter((e) => e.processed);

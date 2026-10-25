@@ -33,12 +33,11 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function InvoiceDetailPage({
-  params,
-}: {
-  params: { id: string };
+export default async function InvoiceDetailPage(props: {
+  params: Promise<{ id: string }>;
 }) {
-  const user = requireUser();
+  const params = await props.params;
+  const user = await requireUser();
   const invoice = getInvoice(user.id, params.id);
   if (!invoice) notFound();
 

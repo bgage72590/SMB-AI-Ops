@@ -15,7 +15,7 @@ const ContactSchema = z.object({
 
 export async function GET() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     return NextResponse.json({ contacts: listContacts(user.id) });
   } catch (err) {
     if (err instanceof AuthError) {
@@ -28,7 +28,7 @@ export async function GET() {
 export async function POST(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });
@@ -60,7 +60,7 @@ const UpdateSchema = z.object({
 export async function PATCH(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });

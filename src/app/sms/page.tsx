@@ -13,12 +13,11 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function SmsPage({
-  searchParams,
-}: {
-  searchParams?: { contactId?: string };
+export default async function SmsPage(props: {
+  searchParams?: Promise<{ contactId?: string }>;
 }) {
-  const user = requireUser();
+  const searchParams = await props.searchParams;
+  const user = await requireUser();
   const configured = isTwilioConfigured();
   const conversations = listSmsConversations(user.id);
   const contacts = listContacts(user.id).filter((c) => c.phone);

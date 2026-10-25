@@ -5,7 +5,7 @@ import { SESSION_COOKIE, logoutSession } from "@/lib/auth";
 export const runtime = "nodejs";
 
 export async function POST() {
-  const jar = cookies();
+  const jar = await cookies();
   const sessionId = jar.get(SESSION_COOKIE)?.value;
   if (sessionId) {
     try {

@@ -3,10 +3,10 @@ import { requireUser } from "@/lib/auth";
 import { isWidgetConfigured, generateWidgetToken } from "@/lib/widget";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 
-export default function WidgetSettingsPage() {
+export default async function WidgetSettingsPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

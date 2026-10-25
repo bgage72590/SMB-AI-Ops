@@ -34,8 +34,8 @@ export const dynamic = "force-dynamic";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export default function DashboardPage() {
-  const user = requireUser();
+export default async function DashboardPage() {
+  const user = await requireUser();
   const emails = listEmails(user.id);
   const deals = listDeals(user.id);
   const contacts = listContacts(user.id);

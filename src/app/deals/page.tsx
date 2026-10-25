@@ -31,12 +31,11 @@ const STAGE_ORDER: Record<DealStage, number> = {
   lost: 5,
 };
 
-export default function JobsPage({
-  searchParams,
-}: {
-  searchParams?: { stage?: string };
+export default async function JobsPage(props: {
+  searchParams?: Promise<{ stage?: string }>;
 }) {
-  const user = requireUser();
+  const searchParams = await props.searchParams;
+  const user = await requireUser();
   const deals = listDeals(user.id);
   const byStage: Record<DealStage, typeof deals> = {
     inquiry: [],

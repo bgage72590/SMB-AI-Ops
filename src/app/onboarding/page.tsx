@@ -2,10 +2,10 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 
-export default function OnboardingPage() {
+export default async function OnboardingPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

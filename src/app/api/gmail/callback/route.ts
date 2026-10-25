@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     process.env.NEXT_PUBLIC_APP_URL ||
     "http://localhost:3000";
 
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   if (!user) {
     return NextResponse.redirect(new URL("/login", base));
   }

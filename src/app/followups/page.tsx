@@ -14,8 +14,8 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function FollowUpsPage() {
-  const user = requireUser();
+export default async function FollowUpsPage() {
+  const user = await requireUser();
   const followUps = listFollowUps(user.id);
   const drafts = followUps.filter((f) => f.status === "draft");
   const rest = followUps.filter((f) => f.status !== "draft");

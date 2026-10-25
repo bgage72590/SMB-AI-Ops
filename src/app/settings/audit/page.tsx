@@ -20,14 +20,13 @@ const ACTION_COLORS: Record<string, string> = {
 
 const PER_PAGE = 50;
 
-export default function AuditPage({
-  searchParams,
-}: {
-  searchParams?: { page?: string };
+export default async function AuditPage(props: {
+  searchParams?: Promise<{ page?: string }>;
 }) {
+  const searchParams = await props.searchParams;
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

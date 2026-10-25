@@ -389,6 +389,16 @@ function migrate(conn: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_invoices_contact ON invoices(contactId);
     CREATE INDEX IF NOT EXISTS idx_invoices_deal ON invoices(dealId);
     CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+
+    -- One row per scheduled-job firing (e.g. deal-decay / 2026-10-25).
+    -- The primary key is the lock: a restart inside the same slot can't
+    -- run the job twice.
+    CREATE TABLE IF NOT EXISTS scheduler_runs (
+      job         TEXT NOT NULL,
+      slot        TEXT NOT NULL,
+      startedAt   TEXT NOT NULL,
+      PRIMARY KEY (job, slot)
+    );
   `);
 
   provisionWorkspaces(conn);
@@ -1344,6 +1354,17 @@ export function enqueueJob(input: {
  * a single-worker deployment. Multiple workers would need a real
  * queueing backend.
  */
+/**
+ * Claim one firing of a scheduled job. Returns true only for the first
+ * caller per (job, slot), so a process restart can't re-run it.
+ */
+export function claimSchedulerSlot(job: string, slot: string): boolean {
+  const result = db()
+    .prepare("INSERT OR IGNORE INTO scheduler_runs (job, slot, startedAt) VALUES (?, ?, ?)")
+    .run(job, slot, now());
+  return result.changes === 1;
+}
+
 export function claimNextJob(): Job | undefined {
   const conn = db();
   const nowStr = now();
