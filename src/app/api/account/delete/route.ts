@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  AuthError,
-  SESSION_COOKIE,
-  requireUserForApi,
-  verifyPassword,
-} from "@/lib/auth";
+import { SESSION_COOKIE, verifyPassword } from "@/lib/auth";
 import { deleteUserData, getPasswordHashByEmail, logAudit } from "@/lib/store";
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -24,26 +19,7 @@ const DeleteSchema = z.object({
  * the current password and an explicit confirmation string to prevent
  * accidental deletion.
  */
-export async function POST(request: Request) {
-  const ip = getClientIp(request);
-  const limit = checkRateLimit(`delete-account:${ip}`, 3, 15 * 60 * 1000);
-  if (!limit.allowed) {
-    return NextResponse.json(
-      { error: "rate_limited" },
-      { status: 429 }
-    );
-  }
-
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ rate: { bucket: "account-delete", max: 3, windowMs: 15 * 60_000 } }, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = DeleteSchema.safeParse(payload);
   if (!parsed.success) {
@@ -79,4 +55,4 @@ export async function POST(request: Request) {
     maxAge: 0,
   });
   return response;
-}
+});

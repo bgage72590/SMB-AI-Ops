@@ -1,23 +1,15 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import { updateUserOutlook } from "@/lib/store";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
-export async function POST() {
-  try {
-    const user = await requireUserForApi();
-    updateUserOutlook(user.id, {
-      outlookAccessToken: null,
-      outlookRefreshToken: null,
-      outlookConnected: false,
-      outlookEmail: null,
-    });
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-}
+export const POST = apiRoute({}, async (_request, user) => {
+  updateUserOutlook(user.id, {
+    outlookAccessToken: null,
+    outlookRefreshToken: null,
+    outlookConnected: false,
+    outlookEmail: null,
+  });
+  return NextResponse.json({ ok: true });
+});

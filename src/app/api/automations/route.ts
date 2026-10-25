@@ -7,6 +7,7 @@ import {
   deleteAutomation,
 } from "@/lib/store";
 import { AuthError, requireUserForApi } from "@/lib/auth";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -59,17 +60,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({}, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = CreateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -80,19 +71,9 @@ export async function POST(request: Request) {
   }
   const automation = createAutomation(user.id, parsed.data);
   return NextResponse.json({ automation }, { status: 201 });
-}
+});
 
-export async function PATCH(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const PATCH = apiRoute({}, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = UpdateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -105,19 +86,9 @@ export async function PATCH(request: Request) {
   const automation = updateAutomation(user.id, id, rest);
   if (!automation) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ automation });
-}
+});
 
-export async function DELETE(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const DELETE = apiRoute({}, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = DeleteSchema.safeParse(payload);
   if (!parsed.success) {
@@ -129,4 +100,4 @@ export async function DELETE(request: Request) {
   const deleted = deleteAutomation(user.id, parsed.data.id);
   if (!deleted) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ ok: true });
-}
+});

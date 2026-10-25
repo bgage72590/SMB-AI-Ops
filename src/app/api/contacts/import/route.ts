@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import { upsertContact } from "@/lib/store";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -93,17 +93,7 @@ function parseCsvLine(line: string): string[] {
   return result;
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ rate: { bucket: "import", max: 10, windowMs: 10 * 60_000 } }, async (request, user) => {
   const formData = await request.formData().catch(() => null);
   if (!formData) {
     return NextResponse.json(
@@ -152,4 +142,4 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ imported, skipped, total: rows.length });
-}
+});

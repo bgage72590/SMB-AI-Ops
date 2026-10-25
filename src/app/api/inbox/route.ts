@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createEmail, listEmails } from "@/lib/store";
 import { processEmail } from "@/lib/pipeline";
 import { AuthError, requireUserForApi } from "@/lib/auth";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -28,17 +29,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ rate: { bucket: "ingest", max: 60, windowMs: 60_000 } }, async (request, user) => {
   let payload: unknown;
   try {
     payload = await request.json();
@@ -60,4 +51,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ email, result }, { status: 201 });
   }
   return NextResponse.json({ email }, { status: 201 });
-}
+});

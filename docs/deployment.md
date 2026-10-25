@@ -52,6 +52,8 @@ least:
 | `ANTHROPIC_API_KEY` | Real triage and drafts (without it the app uses heuristics) |
 | `CRON_SECRET` | Protects the manual `/api/jobs/*` triggers |
 | `JOB_QUEUE_MODE=async` | "Process inbox" and the SendGrid webhook queue work for the scheduler instead of blocking the request |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | Required in production: new accounts can't verify their email (and so can't use AI, sending or texting) without it |
+| `TRUSTED_PROXY_HOPS` | Proxies in front of the app; defaults to 1 (Caddy). Rate limits use the client IP the outermost of these saw |
 | `PORT` | Defaults to 3000 |
 
 ### Per-workspace channels
@@ -70,6 +72,20 @@ owns. Nothing falls back to a default account.
 - **Slack:** create one Slack app (scopes, redirect URL and event
   subscription are listed in `.env.example`). Each workspace connects its
   own channel under Settings → Slack.
+
+### Plans and limits
+
+Every signed-in write goes through `apiRoute()` and every call to a paid
+provider through `chargePaid()` (`src/lib/guard.ts`):
+
+- New accounts get a 14-day trial with Pro features, then drop to the
+  Free plan. Nothing is locked; Free just has fewer features and quotas.
+- AI, sending, texting and enrichment need a verified email and room in
+  a per-account daily quota (`DAILY_LIMITS` in `src/lib/plans.ts`), counted
+  in the `usage_counters` table. Background AI falls back to the basic
+  rules when denied.
+- Per-account rate limits are in memory, which is fine for the single
+  server this runs as.
 
 ## Run
 

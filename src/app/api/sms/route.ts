@@ -8,6 +8,7 @@ import {
   listSmsMessages,
 } from "@/lib/store";
 import { canSendSms, sendSms, smsUnavailableReason } from "@/lib/twilio";
+import { apiRoute, chargePaid } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -35,20 +36,10 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ feature: "sms_followups", rate: { bucket: "sms", max: 20, windowMs: 10 * 60_000 } }, async (request, user) => {
   if (!canSendSms(user)) {
     return NextResponse.json(
-      { error: "twilio_not_configured", message: smsUnavailableReason() },
+      { error: "twilio_not_configured", message: smsUnavailableReason(user) },
       { status: 400 }
     );
   }
@@ -73,6 +64,7 @@ export async function POST(request: Request) {
     );
   }
 
+  chargePaid(user, "sms");
   const result = await sendSms({
     to: contact.phone,
     from: user.smsNumber!,
@@ -91,4 +83,4 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ message: msg }, { status: 201 });
-}
+});

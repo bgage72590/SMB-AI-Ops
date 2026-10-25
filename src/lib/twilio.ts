@@ -10,6 +10,7 @@
 //   TWILIO_AUTH_TOKEN    — auth token; also signs inbound webhooks
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { hasFeature } from "./plans";
 import type { User } from "./types";
 
 export interface SendSmsInput {
@@ -30,13 +31,16 @@ export function isTwilioConfigured(): boolean {
   return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
 }
 
-/** This workspace can text: Twilio is configured and it has a number. */
-export function canSendSms(user: Pick<User, "smsNumber">): boolean {
-  return isTwilioConfigured() && Boolean(user.smsNumber);
+/** This workspace can text: its plan includes SMS, Twilio is configured, and it has a number. */
+export function canSendSms(user: User): boolean {
+  return hasFeature(user, "sms_followups") && isTwilioConfigured() && Boolean(user.smsNumber);
 }
 
 /** Why SMS is unavailable for this workspace, for the UI and API errors. */
-export function smsUnavailableReason(): string {
+export function smsUnavailableReason(user: User): string {
+  if (!hasFeature(user, "sms_followups")) {
+    return "Texting is included in the Starter plan and up. Upgrade under Settings.";
+  }
   if (!isTwilioConfigured()) {
     return "SMS isn't set up on this server. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.";
   }

@@ -1,20 +1,10 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import { logAudit, updateUserCalendar } from "@/lib/store";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
-export async function POST() {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({}, async (_request, user) => {
   updateUserCalendar(user.id, {
     googleAccessToken: null,
     googleRefreshToken: null,
@@ -22,4 +12,4 @@ export async function POST() {
   });
   logAudit(user.id, "disconnected", "calendar", undefined, "Google Calendar disconnected");
   return NextResponse.json({ ok: true });
-}
+});

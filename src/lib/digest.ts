@@ -8,6 +8,7 @@ import {
   listFollowUps,
 } from "./store";
 import { isAIConfigured } from "./ai";
+import { tryChargePaid } from "./guard";
 import { logAiUsage, type UsageLike } from "./aiUsage";
 import { isEmailConfigured, sendEmail } from "./sendgrid";
 import Anthropic from "@anthropic-ai/sdk";
@@ -103,7 +104,7 @@ export async function writeHeadline(
   user: User,
   stats: DigestStats
 ): Promise<string> {
-  if (!isAIConfigured()) return heuristicHeadline(stats);
+  if (!isAIConfigured() || !tryChargePaid(user, "ai")) return heuristicHeadline(stats);
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
   const context = JSON.stringify(stats, null, 2);

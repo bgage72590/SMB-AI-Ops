@@ -16,8 +16,8 @@ export function TrialBanner({ trial }: Props) {
             Your free trial has ended
           </p>
           <p className="text-xs text-fg-muted mt-0.5">
-            Upgrade to keep processing emails, sending follow-ups, and
-            managing your pipeline.
+            You&apos;re on the Free plan now: 25 emails a month, no texting
+            or reports. Upgrade to get them back.
           </p>
         </div>
         <Link
@@ -39,7 +39,7 @@ export function TrialBanner({ trial }: Props) {
           <Link href="/settings" className="text-accent hover:underline">
             Upgrade
           </Link>{" "}
-          to keep full access after it expires.
+          to keep full access after it moves to the Free plan.
         </p>
       </div>
     );

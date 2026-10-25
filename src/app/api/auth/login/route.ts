@@ -30,6 +30,20 @@ export async function POST(request: Request) {
     );
   }
 
+  // Per-account lockout too, so spreading guesses across many IPs doesn't
+  // get more tries at one password.
+  const accountLimit = checkRateLimit(
+    `login-acct:${parsed.data.email.trim().toLowerCase()}`,
+    10,
+    15 * 60 * 1000
+  );
+  if (!accountLimit.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited", retryAfterMs: accountLimit.retryAfterMs },
+      { status: 429 }
+    );
+  }
+
   try {
     const oldSessionId = (await cookies()).get(SESSION_COOKIE)?.value;
     if (oldSessionId) {

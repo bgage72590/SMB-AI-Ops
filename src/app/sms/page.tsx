@@ -35,7 +35,7 @@ export default async function SmsPage(props: {
       {!configured && (
         <div className="rounded-lg border border-warning/30 bg-warning-soft p-4 text-sm text-fg-muted">
           <strong className="text-fg">Texting is off.</strong>{" "}
-          {smsUnavailableReason()}
+          {smsUnavailableReason(user)}
         </div>
       )}
 

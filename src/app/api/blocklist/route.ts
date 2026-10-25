@@ -7,6 +7,7 @@ import {
   removeBlocklistEntry,
 } from "@/lib/store";
 import { AuthError, requireUserForApi } from "@/lib/auth";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -31,17 +32,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({}, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = AddSchema.safeParse(payload);
   if (!parsed.success) {
@@ -54,19 +45,9 @@ export async function POST(request: Request) {
   const entry = addBlocklistEntry(user.id, parsed.data.pattern, parsed.data.reason);
   logAudit(user.id, "added", "blocklist", entry.id, `Pattern: ${entry.pattern}`);
   return NextResponse.json({ entry }, { status: 201 });
-}
+});
 
-export async function DELETE(request: Request) {
-  let user;
-  try {
-    user = await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const DELETE = apiRoute({}, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = RemoveSchema.safeParse(payload);
   if (!parsed.success) {
@@ -78,4 +59,4 @@ export async function DELETE(request: Request) {
     logAudit(user.id, "removed", "blocklist", parsed.data.id);
   }
   return NextResponse.json({ removed });
-}
+});

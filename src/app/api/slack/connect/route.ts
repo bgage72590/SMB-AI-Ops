@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireUserForApi, AuthError } from "@/lib/auth";
+import { GuardError, requireFeature } from "@/lib/guard";
 import {
   buildSlackInstallUrl,
   isSlackAppConfigured,
@@ -15,10 +16,13 @@ export const runtime = "nodejs";
 export async function GET() {
   const base = process.env.APP_BASE_URL || "http://localhost:3000";
   try {
-    await requireUserForApi();
+    requireFeature(await requireUserForApi(), "slack_integration");
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.redirect(new URL("/login", base));
+    }
+    if (err instanceof GuardError) {
+      return NextResponse.redirect(new URL("/settings/slack?error=plan_required", base));
     }
     throw err;
   }

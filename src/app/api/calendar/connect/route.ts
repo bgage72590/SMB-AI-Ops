@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUserForApi } from "@/lib/auth";
+import { apiRoute } from "@/lib/guard";
 import {
   buildAuthUrl,
   isGoogleCalendarConfigured,
@@ -7,16 +7,7 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET() {
-  try {
-    await requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const GET = apiRoute({ feature: "calendar_sync" }, async () => {
   if (!isGoogleCalendarConfigured()) {
     return NextResponse.json(
       {
@@ -30,4 +21,4 @@ export async function GET() {
 
   const url = buildAuthUrl();
   return NextResponse.redirect(url);
-}
+});

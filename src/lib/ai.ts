@@ -8,6 +8,7 @@ import type {
   Contact,
 } from "./types";
 import { checkAiBudget, logAiUsage, type UsageLike } from "./aiUsage";
+import { tryChargePaid } from "./guard";
 
 // Thin wrapper around the Anthropic SDK so the rest of the codebase doesn't
 // need to know which model, prompts, or tool format we're using.
@@ -220,6 +221,27 @@ ${email.body}`,
   return TriageSchema.parse(toolUse.input);
 }
 
+/**
+ * May this account make a real model call right now? Spend must be
+ * attributable, within the owner's weekly budget, and within the daily
+ * plan quota (which this counts). Otherwise callers use the heuristic.
+ */
+function aiAllowed(userId: string | undefined, kind: string): boolean {
+  if (!userId) {
+    console.warn(`[ai] ${kind} without a userId; using heuristic`);
+    return false;
+  }
+  if (checkAiBudget(userId).exceeded) {
+    console.warn(`[ai] weekly AI budget exceeded; using heuristic for ${kind}`);
+    return false;
+  }
+  if (!tryChargePaid(userId, "ai")) {
+    console.warn(`[ai] unverified or over daily AI quota; using heuristic for ${kind}`);
+    return false;
+  }
+  return true;
+}
+
 // Non-throwing variant with a heuristic fallback so the pipeline keeps moving
 // even if the API key is missing or rate-limited. We still return something
 // usable rather than erroring the whole batch.
@@ -228,10 +250,7 @@ export async function triageEmailSafe(
   opts: { userId?: string } = {}
 ): Promise<TriageResult> {
   if (!isAIConfigured()) return heuristicTriage(email);
-  if (opts.userId && checkAiBudget(opts.userId).exceeded) {
-    console.warn("AI budget exceeded, falling back to heuristic for triage");
-    return heuristicTriage(email);
-  }
+  if (!aiAllowed(opts.userId, "triage")) return heuristicTriage(email);
   try {
     return await triageEmail(email, opts);
   } catch (err) {
@@ -355,10 +374,7 @@ export async function draftFollowUp(
   input: DraftFollowUpInput
 ): Promise<FollowUpDraft> {
   if (!isAIConfigured()) return heuristicDraft(input);
-  if (input.userId && checkAiBudget(input.userId).exceeded) {
-    console.warn("AI budget exceeded, falling back to heuristic for draft");
-    return heuristicDraft(input);
-  }
+  if (!aiAllowed(input.userId, "draft")) return heuristicDraft(input);
   try {
     // See triageEmail for why this uses the beta prompt-caching endpoint.
     const response = await client().beta.promptCaching.messages.create({

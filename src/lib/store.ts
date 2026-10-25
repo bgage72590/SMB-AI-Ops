@@ -280,6 +280,14 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "outlookRefreshToken", "TEXT");
   addColumnIfMissing(conn, "users", "outlookConnected", "INTEGER DEFAULT 0");
   addColumnIfMissing(conn, "users", "outlookEmail", "TEXT");
+  // Accounts that existed before email verification count as verified.
+  const hadVerifiedColumn = (
+    conn.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>
+  ).some((c) => c.name === "emailVerifiedAt");
+  addColumnIfMissing(conn, "users", "emailVerifiedAt", "TEXT");
+  if (!hadVerifiedColumn) {
+    conn.exec("UPDATE users SET emailVerifiedAt = createdAt WHERE emailVerifiedAt IS NULL");
+  }
   // Per-tenant inbound channels. Each value routes to exactly one user.
   addColumnIfMissing(conn, "users", "smsNumber", "TEXT");
   addColumnIfMissing(conn, "users", "slackTeamId", "TEXT");
@@ -401,6 +409,27 @@ function migrate(conn: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_invoices_contact ON invoices(contactId);
     CREATE INDEX IF NOT EXISTS idx_invoices_deal ON invoices(dealId);
     CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+
+    -- Paid-provider calls per account per UTC day (ai, email, sms,
+    -- enrichment). Daily plan quotas are enforced against this.
+    CREATE TABLE IF NOT EXISTS usage_counters (
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind        TEXT NOT NULL,
+      day         TEXT NOT NULL,
+      count       INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (userId, kind, day)
+    );
+
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tokenHash   TEXT NOT NULL,
+      createdAt   TEXT NOT NULL,
+      expiresAt   TEXT NOT NULL,
+      usedAt      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_evt_user ON email_verification_tokens(userId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_evt_hash ON email_verification_tokens(tokenHash);
 
     -- One row per scheduled-job firing (e.g. deal-decay / 2026-10-25).
     -- The primary key is the lock: a restart inside the same slot can't
@@ -561,6 +590,7 @@ interface UserRow {
   slackChannelId: string | null;
   slackChannelName: string | null;
   slackWebhookUrl: string | null;
+  emailVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -587,6 +617,7 @@ function rowToUser(row: UserRow): User {
     slackChannelId: row.slackChannelId ?? undefined,
     slackChannelName: row.slackChannelName ?? undefined,
     slackWebhookUrl: row.slackWebhookUrl ?? undefined,
+    emailVerifiedAt: row.emailVerifiedAt ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -1317,6 +1348,85 @@ export function deleteExpiredPasswordResetTokens(): void {
   db()
     .prepare("DELETE FROM password_reset_tokens WHERE expiresAt < ?")
     .run(now());
+}
+
+// ---------- Email verification ----------
+
+export function createEmailVerificationToken(input: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+}): void {
+  db()
+    .prepare(
+      `INSERT INTO email_verification_tokens
+         (id, userId, tokenHash, createdAt, expiresAt, usedAt)
+       VALUES (?, ?, ?, ?, ?, NULL)`
+    )
+    .run(newId(), input.userId, input.tokenHash, now(), input.expiresAt);
+}
+
+/**
+ * Consume a verification token and mark its user verified, atomically.
+ * Returns the user id, or a reason the token can't be used.
+ */
+export function consumeEmailVerificationToken(
+  tokenHash: string
+): { userId: string } | { error: "invalid_token" | "token_used" | "token_expired" } {
+  const conn = db();
+  return conn.transaction(() => {
+    const row = conn
+      .prepare("SELECT * FROM email_verification_tokens WHERE tokenHash = ? LIMIT 1")
+      .get(tokenHash) as PasswordResetTokenRow | undefined;
+    if (!row) return { error: "invalid_token" as const };
+    if (row.usedAt) return { error: "token_used" as const };
+    if (new Date(row.expiresAt).getTime() <= Date.now()) {
+      return { error: "token_expired" as const };
+    }
+    const ts = now();
+    conn.prepare("UPDATE email_verification_tokens SET usedAt = ? WHERE id = ?").run(ts, row.id);
+    conn
+      .prepare("UPDATE users SET emailVerifiedAt = COALESCE(emailVerifiedAt, ?), updatedAt = ? WHERE id = ?")
+      .run(ts, ts, row.userId);
+    return { userId: row.userId };
+  })();
+}
+
+export function deleteExpiredEmailVerificationTokens(): void {
+  db()
+    .prepare("DELETE FROM email_verification_tokens WHERE expiresAt < ?")
+    .run(now());
+}
+
+// ---------- Usage metering ----------
+
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Count one paid-provider call against today's quota. Returns false, and
+ * counts nothing, when the account has already used `limit` today. A
+ * negative limit means unlimited. The check and the increment are one
+ * statement, so concurrent requests can't both slip under the limit.
+ */
+export function tryConsumeUsage(userId: string, kind: string, limit: number): boolean {
+  if (limit === 0) return false;
+  const result = db()
+    .prepare(
+      `INSERT INTO usage_counters (userId, kind, day, count) VALUES (?, ?, ?, 1)
+       ON CONFLICT(userId, kind, day) DO UPDATE SET count = count + 1
+       WHERE ? < 0 OR count < ?`
+    )
+    .run(userId, kind, utcDay(), limit, limit);
+  return result.changes === 1;
+}
+
+export function getUsageToday(userId: string, kind: string): number {
+  const row = db()
+    .prepare("SELECT count FROM usage_counters WHERE userId = ? AND kind = ? AND day = ?")
+    .get(userId, kind, utcDay()) as { count: number } | undefined;
+  return row?.count ?? 0;
 }
 
 export function updateUserPasswordHash(

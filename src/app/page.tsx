@@ -28,13 +28,23 @@ import { isEmailConfigured } from "@/lib/sendgrid";
 import { requireUser } from "@/lib/auth";
 import { checkTrial } from "@/lib/trial";
 import { TrialBanner } from "@/components/TrialBanner";
+import { VerifyEmailBanner } from "@/components/VerifyEmailBanner";
 import { AskBox } from "@/components/AskBox";
 
 export const dynamic = "force-dynamic";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export default async function DashboardPage() {
+const VERIFY_ERRORS: Record<string, string> = {
+  token_expired: "That confirmation link expired. Send yourself a new one below.",
+  token_used: "That confirmation link was already used.",
+  invalid_token: "That confirmation link isn't valid. Send yourself a new one below.",
+};
+
+export default async function DashboardPage(props: {
+  searchParams?: Promise<{ verified?: string; verify_error?: string }>;
+}) {
+  const searchParams = await props.searchParams;
   const user = await requireUser();
   const emails = listEmails(user.id);
   const deals = listDeals(user.id);
@@ -98,6 +108,18 @@ export default async function DashboardPage() {
         </div>
         <ProcessButton />
       </div>
+
+      {searchParams?.verified && user.emailVerifiedAt && (
+        <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-fg">
+          <strong>Email confirmed.</strong> AI triage, sending and texting are on.
+        </div>
+      )}
+      {searchParams?.verify_error && !user.emailVerifiedAt && (
+        <div className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">
+          {VERIFY_ERRORS[searchParams.verify_error] ?? VERIFY_ERRORS.invalid_token}
+        </div>
+      )}
+      {!user.emailVerifiedAt && <VerifyEmailBanner email={user.email} />}
 
       <TrialBanner trial={trial} />
 

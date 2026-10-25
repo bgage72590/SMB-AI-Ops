@@ -60,6 +60,8 @@ export interface User {
   slackChannelName?: string;
   /** Incoming-webhook URL from the Slack install, for outbound notifications. */
   slackWebhookUrl?: string;
+  /** When the owner clicked the verification link. Paid calls need it. */
+  emailVerifiedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

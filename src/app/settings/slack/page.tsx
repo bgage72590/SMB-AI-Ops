@@ -13,6 +13,7 @@ const ERRORS: Record<string, string> = {
   oauth_state: "That install link expired or didn't start here. Try again.",
   oauth_failed: "Slack didn't complete the install. Try again.",
   channel_taken: "That Slack channel is already connected to another workspace.",
+  plan_required: "Slack needs the Pro plan. Upgrade under Settings.",
 };
 
 export default async function SlackPage(props: {

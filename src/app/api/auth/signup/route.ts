@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { AuthError, SESSION_COOKIE, signup, logoutSession } from "@/lib/auth";
+import {
+  AuthError,
+  SESSION_COOKIE,
+  issueEmailVerification,
+  logoutSession,
+  signup,
+  verificationEmail,
+} from "@/lib/auth";
+import { sendAccountLink } from "@/lib/accountEmail";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -37,6 +45,13 @@ export async function POST(request: Request) {
       try { logoutSession(oldSessionId); } catch {}
     }
     const result = signup(parsed.data);
+    const verifyUrl = issueEmailVerification(result.user.id);
+    await sendAccountLink({
+      to: result.user.email,
+      url: verifyUrl,
+      purpose: "verify-email",
+      ...verificationEmail(result.user.name, verifyUrl),
+    });
     const response = NextResponse.json({
       user: { id: result.user.id, email: result.user.email, name: result.user.name },
     });

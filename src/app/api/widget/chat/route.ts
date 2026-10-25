@@ -3,6 +3,7 @@ import { z } from "zod";
 import { verifyWidgetToken, isWidgetConfigured } from "@/lib/widget";
 import { createEmail, getUserById } from "@/lib/store";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { hasFeature } from "@/lib/plans";
 
 export const runtime = "nodejs";
 
@@ -56,6 +57,13 @@ export async function POST(request: Request) {
   const owner = getUserById(verified.userId);
   if (!owner) {
     return NextResponse.json({ error: "owner_not_found" }, { status: 404 });
+  }
+  if (!hasFeature(owner, "chat_widget")) {
+    return NextResponse.json({ error: "widget_unavailable" }, { status: 403 });
+  }
+  // Cap what one embed can push into a workspace, whatever the source IPs.
+  if (!checkRateLimit(`widget-owner:${owner.id}`, 200, 60 * 60 * 1000).allowed) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
   const body = parsed.data.phone

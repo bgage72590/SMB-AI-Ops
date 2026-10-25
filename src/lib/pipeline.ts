@@ -21,7 +21,8 @@ import {
   getAvailability,
   refreshAccessToken,
 } from "./google-calendar";
-import { checkUsageLimits } from "./plans";
+import { checkUsageLimits, hasFeature } from "./plans";
+import { tryChargePaid } from "./guard";
 import {
   isSlackConfigured,
   sendSlackNotification,
@@ -64,7 +65,8 @@ export async function processEmail(
       console.warn(
         `User ${userId} over email limit (${limits.emailsUsed}/${limits.emailsLimit}), skipping AI pipeline`
       );
-      updateEmail(userId, email.id, { processed: true });
+      // Leave it unprocessed (not marked done) so it gets triaged once
+      // the owner upgrades or the 30-day window rolls over.
       return {
         emailId: email.id,
         category: "other",
@@ -244,7 +246,7 @@ export async function processEmail(
     logAudit(userId, "drafted", "followUp", followUpId);
   }
 
-  if (owner && isSlackConfigured(owner)) {
+  if (owner && isSlackConfigured(owner) && hasFeature(owner, "slack_integration")) {
     try {
       if (triage.category === "new_lead") {
         const contact = contactId ? getContact(userId, contactId) : undefined;
@@ -282,7 +284,7 @@ export async function processEmail(
   if (contactId && isEnrichmentConfigured()) {
     try {
       const cached = getEnrichmentCache(email.from);
-      if (!cached) {
+      if (!cached && owner && hasFeature(owner, "lead_enrichment") && tryChargePaid(owner, "enrichment")) {
         const enriched = await enrichContactLookup(email.from);
         if (enriched) {
           setEnrichmentCache(email.from, enriched as unknown as Record<string, unknown>);
