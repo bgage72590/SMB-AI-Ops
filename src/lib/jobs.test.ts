@@ -7,14 +7,20 @@ import {
   claimNextJob,
   completeJob,
   countPendingJobs,
+  createDeal,
   createEmail,
   createUserRow,
   enqueueJob,
   failJob,
   listEmails,
+  listFollowUpsForDeal,
   listRecentJobs,
+  updateDeal,
+  updateFollowUp,
+  upsertContact,
 } from "./store";
 import {
+  enqueueDecayNudges,
   enqueueEmailProcessing,
   enqueueUnprocessedEmails,
   runJobs,
@@ -142,5 +148,61 @@ describe("runJobs with process_email", () => {
     const result = await runJobs({ max: 5 });
     expect(result.succeeded).toBe(1);
     expect(result.failed).toBe(0);
+  });
+});
+
+describe("deal decay nudges", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  function staleDeal(daysQuiet = 6) {
+    const contact = upsertContact(userId, { name: "Pat Quiet", email: "pat@example.com" });
+    const deal = createDeal(userId, { title: "Fence repair", contactId: contact.id, stage: "quoted" });
+    updateDeal(userId, deal.id, {
+      lastActivityAt: new Date(Date.now() - daysQuiet * DAY).toISOString(),
+    });
+    return deal;
+  }
+
+  it("drafts one nudge for a quiet deal, then stops on later days", async () => {
+    const deal = staleDeal();
+    expect(enqueueDecayNudges()).toBe(1);
+    await runJobs();
+    expect(listFollowUpsForDeal(userId, deal.id)).toHaveLength(1);
+
+    // The next daily scans must not re-draft while that nudge is pending.
+    expect(enqueueDecayNudges()).toBe(0);
+    expect(enqueueDecayNudges()).toBe(0);
+    await runJobs();
+    expect(listFollowUpsForDeal(userId, deal.id)).toHaveLength(1);
+  });
+
+  it("doesn't nudge again after the owner dismisses or sends it", async () => {
+    const deal = staleDeal();
+    enqueueDecayNudges();
+    await runJobs();
+    const [nudge] = listFollowUpsForDeal(userId, deal.id);
+
+    updateFollowUp(userId, nudge.id, { status: "dismissed" });
+    expect(enqueueDecayNudges()).toBe(0);
+    updateFollowUp(userId, nudge.id, { status: "sent" });
+    expect(enqueueDecayNudges()).toBe(0);
+  });
+
+  it("skips deals that aren't quiet yet or are closed", () => {
+    staleDeal(2);
+    const contact = upsertContact(userId, { name: "Done", email: "done@example.com" });
+    const closed = createDeal(userId, { title: "Old job", contactId: contact.id, stage: "completed" });
+    updateDeal(userId, closed.id, { lastActivityAt: new Date(Date.now() - 30 * DAY).toISOString() });
+    expect(enqueueDecayNudges()).toBe(0);
+  });
+
+  it("collapses duplicate queued jobs into one draft", async () => {
+    const deal = staleDeal();
+    for (let i = 0; i < 3; i++) {
+      enqueueJob({ type: "deal_decay_nudge", userId, payload: { userId, dealId: deal.id } });
+    }
+    const result = await runJobs();
+    expect(result.succeeded).toBe(3);
+    expect(listFollowUpsForDeal(userId, deal.id)).toHaveLength(1);
   });
 });

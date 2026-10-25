@@ -12,10 +12,12 @@ import {
   getEmail,
   listDeals,
   listEmails,
+  listFollowUpsForDeal,
   listUsers,
   logAudit,
   type Job,
 } from "./store";
+import type { Deal } from "./types";
 import { processEmail } from "./pipeline";
 import { draftFollowUp } from "./ai";
 import { OPEN_DEAL_STAGES } from "./types";
@@ -120,6 +122,9 @@ async function dispatch(job: Job): Promise<void> {
       const deal = getDeal(parsed.userId, parsed.dealId);
       if (!deal) return;
       if (deal.stage === "completed" || deal.stage === "lost") return;
+      // Re-check at run time: a duplicate job, or a nudge drafted since
+      // this one was queued, must not cost another AI call.
+      if (!needsNudge(parsed.userId, deal)) return;
       const contact = getContact(parsed.userId, deal.contactId);
       if (!contact) return;
       const draft = await draftFollowUp({
@@ -175,9 +180,26 @@ export function enqueueUnprocessedEmails(userId: string): number {
 const DECAY_THRESHOLD_MS = 5 * 24 * 60 * 60 * 1000;
 
 /**
+ * A deal gets at most one nudge per quiet spell. Skip it while a draft is
+ * still waiting on the owner, or when any follow-up was created since the
+ * deal's last activity (the owner already got a nudge and sent or
+ * dismissed it, and nothing has happened since). Drafting a nudge doesn't
+ * count as deal activity, so without this the daily scan re-drafts the
+ * same nudge every day.
+ */
+function needsNudge(userId: string, deal: Deal): boolean {
+  return !listFollowUpsForDeal(userId, deal.id).some(
+    (f) =>
+      f.status === "draft" ||
+      f.status === "approved" ||
+      f.createdAt >= deal.lastActivityAt
+  );
+}
+
+/**
  * Scan all users for open deals with no activity in the last N days and
- * enqueue a follow-up draft for each. Called from the daily cron endpoint.
- * Returns the total number of nudge jobs enqueued.
+ * enqueue a follow-up draft for each one that hasn't been nudged yet.
+ * Run daily by the scheduler. Returns the number of nudge jobs enqueued.
  */
 export function enqueueDecayNudges(): number {
   const users = listUsers();
@@ -189,7 +211,8 @@ export function enqueueDecayNudges(): number {
     const stale = deals.filter(
       (d) =>
         (OPEN_DEAL_STAGES as readonly string[]).includes(d.stage) &&
-        d.lastActivityAt < cutoff
+        d.lastActivityAt < cutoff &&
+        needsNudge(user.id, d)
     );
     for (const deal of stale) {
       enqueueJob({
