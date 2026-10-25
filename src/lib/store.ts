@@ -225,26 +225,6 @@ function migrate(conn: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_audit_entity
       ON audit_log(entityType, entityId);
 
-    CREATE TABLE IF NOT EXISTS workspaces (
-      id        TEXT PRIMARY KEY,
-      name      TEXT NOT NULL,
-      ownerId   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      createdAt TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS workspace_invites (
-      id          TEXT PRIMARY KEY,
-      workspaceId TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-      email       TEXT NOT NULL COLLATE NOCASE,
-      role        TEXT NOT NULL DEFAULT 'member',
-      invitedBy   TEXT NOT NULL REFERENCES users(id),
-      acceptedAt  TEXT,
-      createdAt   TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_ws_invites_workspace
-      ON workspace_invites(workspaceId);
-    CREATE INDEX IF NOT EXISTS idx_ws_invites_email
-      ON workspace_invites(email);
   `);
 
   // Incremental column adds for existing installs that predate the userId
@@ -270,7 +250,6 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "googleAccessToken", "TEXT");
   addColumnIfMissing(conn, "users", "googleRefreshToken", "TEXT");
   addColumnIfMissing(conn, "users", "googleCalendarEnabled", "INTEGER DEFAULT 0");
-  addColumnIfMissing(conn, "users", "workspaceId", "TEXT");
   addColumnIfMissing(conn, "users", "gmailAccessToken", "TEXT");
   addColumnIfMissing(conn, "users", "gmailRefreshToken", "TEXT");
   addColumnIfMissing(conn, "users", "gmailConnected", "INTEGER DEFAULT 0");
@@ -307,43 +286,6 @@ function migrate(conn: Database.Database): void {
       data       TEXT NOT NULL,
       createdAt  TEXT NOT NULL
     );
-
-    CREATE TABLE IF NOT EXISTS custom_field_schemas (
-      id         TEXT PRIMARY KEY,
-      userId     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      entityType TEXT NOT NULL,
-      schema     TEXT NOT NULL,
-      updatedAt  TEXT NOT NULL
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_cfs_user_entity
-      ON custom_field_schemas(userId, entityType);
-
-    CREATE TABLE IF NOT EXISTS custom_field_values (
-      id         TEXT PRIMARY KEY,
-      userId     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      entityType TEXT NOT NULL,
-      entityId   TEXT NOT NULL,
-      data       TEXT NOT NULL,
-      updatedAt  TEXT NOT NULL
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_cfv_user_entity
-      ON custom_field_values(userId, entityType, entityId);
-    CREATE INDEX IF NOT EXISTS idx_cfv_entity
-      ON custom_field_values(entityType, entityId);
-
-    CREATE TABLE IF NOT EXISTS automations (
-      id          TEXT PRIMARY KEY,
-      userId      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name        TEXT NOT NULL,
-      enabled     INTEGER NOT NULL DEFAULT 1,
-      trigger     TEXT NOT NULL,
-      conditions  TEXT NOT NULL DEFAULT '{}',
-      action      TEXT NOT NULL,
-      actionConfig TEXT NOT NULL DEFAULT '{}',
-      createdAt   TEXT NOT NULL,
-      updatedAt   TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(userId);
 
     CREATE TABLE IF NOT EXISTS webhook_endpoints (
       id          TEXT PRIMARY KEY,
@@ -442,7 +384,15 @@ function migrate(conn: Database.Database): void {
     );
   `);
 
-  provisionWorkspaces(conn);
+  // Team workspaces, custom fields and automations were removed unbuilt
+  // (2026-10). Drop their tables from older databases.
+  conn.exec(`
+    DROP TABLE IF EXISTS workspace_invites;
+    DROP TABLE IF EXISTS workspaces;
+    DROP TABLE IF EXISTS custom_field_values;
+    DROP TABLE IF EXISTS custom_field_schemas;
+    DROP TABLE IF EXISTS automations;
+  `);
   migrateLegacyStageValues(conn);
   migrateLegacyData(conn);
 }
@@ -452,27 +402,6 @@ function migrate(conn: Database.Database): void {
  * Safe to run on every boot — the UPDATEs only touch rows whose stage
  * value is still one of the legacy names, so re-running is a no-op.
  */
-/**
- * Auto-create a workspace for any user that doesn't have one yet. On first
- * boot this gives every existing user their own workspace. New users get
- * one at signup time (via createWorkspace).
- */
-function provisionWorkspaces(conn: Database.Database): void {
-  const orphans = conn
-    .prepare("SELECT id, name FROM users WHERE workspaceId IS NULL")
-    .all() as Array<{ id: string; name: string }>;
-  for (const u of orphans) {
-    const wsId = randomUUID();
-    const ts = new Date().toISOString();
-    conn
-      .prepare("INSERT INTO workspaces (id, name, ownerId, createdAt) VALUES (?, ?, ?, ?)")
-      .run(wsId, `${u.name}'s workspace`, u.id, ts);
-    conn
-      .prepare("UPDATE users SET workspaceId = ? WHERE id = ?")
-      .run(wsId, u.id);
-  }
-}
-
 function migrateLegacyStageValues(conn: Database.Database): void {
   const stmt = conn.prepare("UPDATE deals SET stage = ? WHERE stage = ?");
   for (const [oldStage, newStage] of Object.entries(LEGACY_STAGE_MAP)) {
@@ -584,7 +513,6 @@ interface UserRow {
   googleAccessToken: string | null;
   googleRefreshToken: string | null;
   googleCalendarEnabled: number | null;
-  workspaceId: string | null;
   smsNumber: string | null;
   slackTeamId: string | null;
   slackChannelId: string | null;
@@ -611,7 +539,6 @@ function rowToUser(row: UserRow): User {
     googleAccessToken: row.googleAccessToken ?? undefined,
     googleRefreshToken: row.googleRefreshToken ?? undefined,
     googleCalendarEnabled: row.googleCalendarEnabled === 1 ? true : undefined,
-    workspaceId: row.workspaceId ?? undefined,
     smsNumber: row.smsNumber ?? undefined,
     slackTeamId: row.slackTeamId ?? undefined,
     slackChannelId: row.slackChannelId ?? undefined,
@@ -2324,8 +2251,6 @@ export function deleteUserData(userId: string): number {
   const conn = db();
   let tables = 0;
   const ops = [
-    "DELETE FROM custom_field_values WHERE userId = ?",
-    "DELETE FROM custom_field_schemas WHERE userId = ?",
     "DELETE FROM audit_log WHERE userId = ?",
     "DELETE FROM ai_usage WHERE userId = ?",
     "DELETE FROM sender_blocklist WHERE userId = ?",
@@ -2336,7 +2261,6 @@ export function deleteUserData(userId: string): number {
     "DELETE FROM jobs WHERE userId = ?",
     "DELETE FROM sessions WHERE userId = ?",
     "DELETE FROM password_reset_tokens WHERE userId = ?",
-    "DELETE FROM workspace_invites WHERE invitedBy = ?",
   ];
   for (const sql of ops) {
     try {
@@ -2355,116 +2279,6 @@ export function deleteUserData(userId: string): number {
     tables++;
   } catch { /* ignore */ }
   return tables;
-}
-
-// ---------- Workspaces ----------
-
-export interface Workspace {
-  id: string;
-  name: string;
-  ownerId: string;
-  createdAt: string;
-}
-
-export interface WorkspaceInvite {
-  id: string;
-  workspaceId: string;
-  email: string;
-  role: string;
-  invitedBy: string;
-  acceptedAt?: string;
-  createdAt: string;
-}
-
-export function createWorkspace(name: string, ownerId: string): Workspace {
-  const ws: Workspace = {
-    id: newId(),
-    name,
-    ownerId,
-    createdAt: now(),
-  };
-  db()
-    .prepare(
-      "INSERT INTO workspaces (id, name, ownerId, createdAt) VALUES (?, ?, ?, ?)"
-    )
-    .run(ws.id, ws.name, ws.ownerId, ws.createdAt);
-  db()
-    .prepare("UPDATE users SET workspaceId = ? WHERE id = ?")
-    .run(ws.id, ownerId);
-  return ws;
-}
-
-export function getWorkspace(workspaceId: string): Workspace | undefined {
-  return db()
-    .prepare("SELECT * FROM workspaces WHERE id = ?")
-    .get(workspaceId) as Workspace | undefined;
-}
-
-export function getWorkspaceMembers(workspaceId: string): User[] {
-  const rows = db()
-    .prepare("SELECT * FROM users WHERE workspaceId = ?")
-    .all(workspaceId) as UserRow[];
-  return rows.map(rowToUser);
-}
-
-export function createWorkspaceInvite(
-  workspaceId: string,
-  email: string,
-  invitedBy: string,
-  role = "member"
-): WorkspaceInvite {
-  const invite: WorkspaceInvite = {
-    id: newId(),
-    workspaceId,
-    email: email.toLowerCase().trim(),
-    role,
-    invitedBy,
-    createdAt: now(),
-  };
-  db()
-    .prepare(
-      "INSERT INTO workspace_invites (id, workspaceId, email, role, invitedBy, createdAt) VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    .run(invite.id, invite.workspaceId, invite.email, invite.role, invite.invitedBy, invite.createdAt);
-  return invite;
-}
-
-export function listWorkspaceInvites(workspaceId: string): WorkspaceInvite[] {
-  return db()
-    .prepare(
-      "SELECT * FROM workspace_invites WHERE workspaceId = ? ORDER BY createdAt DESC"
-    )
-    .all(workspaceId) as WorkspaceInvite[];
-}
-
-export function getPendingInviteForEmail(email: string): WorkspaceInvite | undefined {
-  return db()
-    .prepare(
-      "SELECT * FROM workspace_invites WHERE email = ? AND acceptedAt IS NULL ORDER BY createdAt DESC LIMIT 1"
-    )
-    .get(email.toLowerCase().trim()) as WorkspaceInvite | undefined;
-}
-
-export function acceptWorkspaceInvite(inviteId: string, userId: string): void {
-  const invite = db()
-    .prepare("SELECT * FROM workspace_invites WHERE id = ?")
-    .get(inviteId) as WorkspaceInvite | undefined;
-  if (!invite || invite.acceptedAt) return;
-  db()
-    .prepare("UPDATE workspace_invites SET acceptedAt = ? WHERE id = ?")
-    .run(now(), inviteId);
-  db()
-    .prepare("UPDATE users SET workspaceId = ? WHERE id = ?")
-    .run(invite.workspaceId, userId);
-}
-
-export function removeWorkspaceMember(workspaceId: string, userId: string): boolean {
-  const ws = getWorkspace(workspaceId);
-  if (!ws || ws.ownerId === userId) return false;
-  db()
-    .prepare("UPDATE users SET workspaceId = NULL WHERE id = ? AND workspaceId = ?")
-    .run(userId, workspaceId);
-  return true;
 }
 
 // ---------- Audit log ----------
@@ -2568,207 +2382,6 @@ export function setEnrichmentCache(
        VALUES (?, ?, ?)`
     )
     .run(email.toLowerCase().trim(), JSON.stringify(data), now());
-}
-
-// ---------- Custom fields ----------
-
-export interface CustomFieldDef {
-  key: string;
-  label: string;
-  type: "text" | "number" | "date" | "select";
-  options?: string[];
-}
-
-export function getCustomFieldSchema(
-  userId: string,
-  entityType: string
-): CustomFieldDef[] {
-  const row = db()
-    .prepare(
-      "SELECT schema FROM custom_field_schemas WHERE userId = ? AND entityType = ?"
-    )
-    .get(userId, entityType) as { schema: string } | undefined;
-  if (!row) return [];
-  try {
-    return JSON.parse(row.schema);
-  } catch {
-    return [];
-  }
-}
-
-export function setCustomFieldSchema(
-  userId: string,
-  entityType: string,
-  schema: CustomFieldDef[]
-): void {
-  db()
-    .prepare(
-      `INSERT INTO custom_field_schemas (id, userId, entityType, schema, updatedAt)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(userId, entityType) DO UPDATE SET
-         schema = excluded.schema,
-         updatedAt = excluded.updatedAt`
-    )
-    .run(newId(), userId, entityType, JSON.stringify(schema), now());
-}
-
-export function getCustomFields(
-  userId: string,
-  entityType: string,
-  entityId: string
-): Record<string, unknown> {
-  const row = db()
-    .prepare(
-      "SELECT data FROM custom_field_values WHERE userId = ? AND entityType = ? AND entityId = ?"
-    )
-    .get(userId, entityType, entityId) as { data: string } | undefined;
-  if (!row) return {};
-  try {
-    return JSON.parse(row.data);
-  } catch {
-    return {};
-  }
-}
-
-export function setCustomFields(
-  userId: string,
-  entityType: string,
-  entityId: string,
-  fields: Record<string, unknown>
-): void {
-  const existing = getCustomFields(userId, entityType, entityId);
-  const merged = { ...existing, ...fields };
-  db()
-    .prepare(
-      `INSERT INTO custom_field_values (id, userId, entityType, entityId, data, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(userId, entityType, entityId) DO UPDATE SET
-         data = excluded.data,
-         updatedAt = excluded.updatedAt`
-    )
-    .run(newId(), userId, entityType, entityId, JSON.stringify(merged), now());
-}
-
-// ---------- Automations ----------
-
-export interface Automation {
-  id: string;
-  userId: string;
-  name: string;
-  enabled: boolean;
-  trigger: string;
-  conditions: Record<string, unknown>;
-  action: string;
-  actionConfig: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface AutomationRow {
-  id: string;
-  userId: string;
-  name: string;
-  enabled: number;
-  trigger: string;
-  conditions: string;
-  action: string;
-  actionConfig: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-function toAutomation(row: AutomationRow): Automation {
-  return {
-    ...row,
-    enabled: row.enabled === 1,
-    conditions: JSON.parse(row.conditions || "{}"),
-    actionConfig: JSON.parse(row.actionConfig || "{}"),
-  };
-}
-
-export function listAutomations(userId: string): Automation[] {
-  const rows = db()
-    .prepare("SELECT * FROM automations WHERE userId = ? ORDER BY createdAt DESC")
-    .all(userId) as AutomationRow[];
-  return rows.map(toAutomation);
-}
-
-export function getAutomation(userId: string, id: string): Automation | undefined {
-  const row = db()
-    .prepare("SELECT * FROM automations WHERE id = ? AND userId = ?")
-    .get(id, userId) as AutomationRow | undefined;
-  return row ? toAutomation(row) : undefined;
-}
-
-export function createAutomation(
-  userId: string,
-  input: {
-    name: string;
-    trigger: string;
-    conditions?: Record<string, unknown>;
-    action: string;
-    actionConfig?: Record<string, unknown>;
-    enabled?: boolean;
-  }
-): Automation {
-  const id = newId();
-  const ts = now();
-  db()
-    .prepare(
-      `INSERT INTO automations (id, userId, name, enabled, trigger, conditions, action, actionConfig, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      id,
-      userId,
-      input.name,
-      input.enabled !== false ? 1 : 0,
-      input.trigger,
-      JSON.stringify(input.conditions || {}),
-      input.action,
-      JSON.stringify(input.actionConfig || {}),
-      ts,
-      ts
-    );
-  return getAutomation(userId, id)!;
-}
-
-export function updateAutomation(
-  userId: string,
-  id: string,
-  patch: {
-    name?: string;
-    enabled?: boolean;
-    trigger?: string;
-    conditions?: Record<string, unknown>;
-    action?: string;
-    actionConfig?: Record<string, unknown>;
-  }
-): Automation | undefined {
-  const existing = getAutomation(userId, id);
-  if (!existing) return undefined;
-
-  const sets: string[] = ["updatedAt = ?"];
-  const vals: unknown[] = [now()];
-  if (patch.name !== undefined) { sets.push("name = ?"); vals.push(patch.name); }
-  if (patch.enabled !== undefined) { sets.push("enabled = ?"); vals.push(patch.enabled ? 1 : 0); }
-  if (patch.trigger !== undefined) { sets.push("trigger = ?"); vals.push(patch.trigger); }
-  if (patch.conditions !== undefined) { sets.push("conditions = ?"); vals.push(JSON.stringify(patch.conditions)); }
-  if (patch.action !== undefined) { sets.push("action = ?"); vals.push(patch.action); }
-  if (patch.actionConfig !== undefined) { sets.push("actionConfig = ?"); vals.push(JSON.stringify(patch.actionConfig)); }
-
-  vals.push(id, userId);
-  db()
-    .prepare(`UPDATE automations SET ${sets.join(", ")} WHERE id = ? AND userId = ?`)
-    .run(...vals);
-  return getAutomation(userId, id);
-}
-
-export function deleteAutomation(userId: string, id: string): boolean {
-  const result = db()
-    .prepare("DELETE FROM automations WHERE id = ? AND userId = ?")
-    .run(id, userId);
-  return result.changes > 0;
 }
 
 // ---------- Invoices / Quotes ----------
