@@ -280,6 +280,18 @@ function migrate(conn: Database.Database): void {
   addColumnIfMissing(conn, "users", "outlookRefreshToken", "TEXT");
   addColumnIfMissing(conn, "users", "outlookConnected", "INTEGER DEFAULT 0");
   addColumnIfMissing(conn, "users", "outlookEmail", "TEXT");
+  // Per-tenant inbound channels. Each value routes to exactly one user.
+  addColumnIfMissing(conn, "users", "smsNumber", "TEXT");
+  addColumnIfMissing(conn, "users", "slackTeamId", "TEXT");
+  addColumnIfMissing(conn, "users", "slackChannelId", "TEXT");
+  addColumnIfMissing(conn, "users", "slackChannelName", "TEXT");
+  addColumnIfMissing(conn, "users", "slackWebhookUrl", "TEXT");
+  conn.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_sms_number
+      ON users(smsNumber) WHERE smsNumber IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_slack_channel
+      ON users(slackTeamId, slackChannelId) WHERE slackTeamId IS NOT NULL;
+  `);
 
   conn.exec(`
     CREATE TABLE IF NOT EXISTS enrichment_cache (
@@ -544,6 +556,11 @@ interface UserRow {
   googleRefreshToken: string | null;
   googleCalendarEnabled: number | null;
   workspaceId: string | null;
+  smsNumber: string | null;
+  slackTeamId: string | null;
+  slackChannelId: string | null;
+  slackChannelName: string | null;
+  slackWebhookUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -565,6 +582,11 @@ function rowToUser(row: UserRow): User {
     googleRefreshToken: row.googleRefreshToken ?? undefined,
     googleCalendarEnabled: row.googleCalendarEnabled === 1 ? true : undefined,
     workspaceId: row.workspaceId ?? undefined,
+    smsNumber: row.smsNumber ?? undefined,
+    slackTeamId: row.slackTeamId ?? undefined,
+    slackChannelId: row.slackChannelId ?? undefined,
+    slackChannelName: row.slackChannelName ?? undefined,
+    slackWebhookUrl: row.slackWebhookUrl ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -1105,15 +1127,67 @@ export function findUserByInboundAddress(address: string): User | undefined {
   return row ? rowToUser(row) : undefined;
 }
 
-export function getFirstUser(): User | undefined {
+/** Strip formatting so "+1 (555) 123-4567" and "+15551234567" compare equal. */
+export function normalizePhone(phone: string): string {
+  return phone.replace(/[^+\d]/g, "");
+}
+
+/** The user whose assigned Twilio number is `number`, if any. */
+export function findUserBySmsNumber(number: string): User | undefined {
+  const normalized = normalizePhone(number);
+  if (!normalized) return undefined;
   const row = db()
-    .prepare("SELECT * FROM users ORDER BY createdAt ASC LIMIT 1")
-    .get() as UserRow | undefined;
+    .prepare("SELECT * FROM users WHERE smsNumber = ? LIMIT 1")
+    .get(normalized) as UserRow | undefined;
   return row ? rowToUser(row) : undefined;
 }
 
-// Used by the scheduled digest job. Callers iterate over every user and
-// run their own per-user work. Never exposed to end-user API routes.
+/**
+ * Assign (or with null, release) a user's Twilio number. Throws if the
+ * number already belongs to someone else — the unique index enforces it.
+ */
+export function setUserSmsNumber(userId: string, number: string | null): User | undefined {
+  const value = number === null ? null : normalizePhone(number);
+  db()
+    .prepare("UPDATE users SET smsNumber = ?, updatedAt = ? WHERE id = ?")
+    .run(value || null, now(), userId);
+  return getUserById(userId);
+}
+
+/** The user who connected this Slack workspace + channel, if any. */
+export function findUserBySlackChannel(teamId: string, channelId: string): User | undefined {
+  const row = db()
+    .prepare("SELECT * FROM users WHERE slackTeamId = ? AND slackChannelId = ? LIMIT 1")
+    .get(teamId, channelId) as UserRow | undefined;
+  return row ? rowToUser(row) : undefined;
+}
+
+/** Save a Slack install for a user, or clear it with null. */
+export function setUserSlack(
+  userId: string,
+  slack: { teamId: string; channelId: string; channelName: string; webhookUrl: string } | null
+): User | undefined {
+  db()
+    .prepare(
+      `UPDATE users
+          SET slackTeamId = ?, slackChannelId = ?, slackChannelName = ?, slackWebhookUrl = ?,
+              updatedAt = ?
+        WHERE id = ?`
+    )
+    .run(
+      slack?.teamId ?? null,
+      slack?.channelId ?? null,
+      slack?.channelName ?? null,
+      slack?.webhookUrl ?? null,
+      now(),
+      userId
+    );
+  return getUserById(userId);
+}
+
+// Used by the scheduled jobs (digest, notifications). Callers iterate over
+// every user and run their own per-user work. Never use it to pick a user
+// for inbound traffic — route on an address/number the user owns instead.
 export function listAllUsers(): User[] {
   const rows = db()
     .prepare("SELECT * FROM users ORDER BY createdAt ASC")
@@ -2860,11 +2934,11 @@ export function findContactByPhone(
   userId: string,
   phone: string
 ): Contact | undefined {
-  const normalized = phone.replace(/[^+\d]/g, "");
+  const normalized = normalizePhone(phone);
   const contacts = listContacts(userId);
   return contacts.find((c) => {
     if (!c.phone) return false;
-    return c.phone.replace(/[^+\d]/g, "") === normalized;
+    return normalizePhone(c.phone) === normalized;
   });
 }
 

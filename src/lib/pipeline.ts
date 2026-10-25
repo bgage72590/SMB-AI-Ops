@@ -244,11 +244,12 @@ export async function processEmail(
     logAudit(userId, "drafted", "followUp", followUpId);
   }
 
-  if (isSlackConfigured()) {
+  if (owner && isSlackConfigured(owner)) {
     try {
       if (triage.category === "new_lead") {
         const contact = contactId ? getContact(userId, contactId) : undefined;
         await sendSlackNotification(
+          owner,
           buildNewLeadBlock({
             contactName: contact?.name || email.fromName || email.from,
             email: email.from,
@@ -263,6 +264,7 @@ export async function processEmail(
         const contact = contactId ? getContact(userId, contactId) : undefined;
         if (deal) {
           await sendSlackNotification(
+          owner,
             buildDealUpdateBlock({
               dealTitle: deal.title,
               stage: deal.stage,

@@ -9,11 +9,44 @@ export interface SendGridInboundPayload {
   from: string;
   fromName?: string;
   to: string;
+  cc?: string;
   subject: string;
   text?: string;
   html?: string;
   headers?: string;
-  envelope?: string;
+  /** SMTP envelope, `{"to":[...],"from":"..."}`. A JSON string from Inbound Parse. */
+  envelope?: string | { to?: string[]; from?: string };
+}
+
+const EMAIL_ADDRESS = /[^\s<>,;"'()]+@[^\s<>,;"'()]+/g;
+
+/**
+ * The addresses an inbound message was delivered to, best source first.
+ *
+ * The SMTP envelope is what SendGrid actually accepted mail for. Headers
+ * are not: forwarded mail (the Gmail-forwarding setup onboarding asks for)
+ * keeps the original To header, and Bcc'd mail isn't in the headers at
+ * all. So when there's an envelope, it's the only source. The To and Cc
+ * headers are used only when there's no envelope (raw JSON posts).
+ */
+export function inboundRecipients(payload: SendGridInboundPayload): string[] {
+  let envelope = payload.envelope;
+  if (typeof envelope === "string") {
+    try {
+      envelope = JSON.parse(envelope) as { to?: string[] };
+    } catch {
+      envelope = undefined;
+    }
+  }
+  const envelopeTo = Array.isArray(envelope?.to) ? envelope.to : [];
+  const sources = envelopeTo.length > 0 ? envelopeTo : [payload.to, payload.cc ?? ""];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    for (const address of source.match(EMAIL_ADDRESS) ?? []) {
+      seen.add(address.toLowerCase());
+    }
+  }
+  return [...seen];
 }
 
 export interface SendEmailInput {

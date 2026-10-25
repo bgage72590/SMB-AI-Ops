@@ -123,11 +123,16 @@ with sample contacts, deals, and emails so it's immediately interactive.
 
 ### Routing inbound email to a user
 
-The Postmark inbound webhook matches the incoming `To` address against
-every user's `inboundAddress` column and routes the email to the winner.
-If no one claims the address, it falls back to the first user in the DB
-so single-tenant installs still "just work". Multi-tenant installs set
-`inboundAddress` per user (e.g. `marta+inbox@yourdomain.com`).
+Every user gets their own `inboundAddress` at signup (on
+`INBOUND_ADDRESS_DOMAIN`). The SendGrid inbound webhook matches the SMTP
+envelope recipients against those addresses and delivers a copy to each
+user who owns one. Headers are only consulted when there's no envelope,
+because forwarded mail keeps its original `To`. Mail that matches no one
+is dropped; there is no default account.
+
+Texts and Slack messages route the same way: by the Twilio number a text
+was sent to (assigned per user with `scripts/assign-sms-number.mjs`), and
+by the Slack workspace + channel a user connected under Settings → Slack.
 
 ## Wiring up a real inbox
 

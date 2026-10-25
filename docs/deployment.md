@@ -54,6 +54,23 @@ least:
 | `JOB_QUEUE_MODE=async` | "Process inbox" and the SendGrid webhook queue work for the scheduler instead of blocking the request |
 | `PORT` | Defaults to 3000 |
 
+### Per-workspace channels
+
+Inbound traffic routes to a workspace only by something that workspace
+owns. Nothing falls back to a default account.
+
+- **Email:** each user gets an `inboundAddress` at signup. Point SendGrid
+  Inbound Parse for `INBOUND_ADDRESS_DOMAIN` at
+  `/api/webhooks/sendgrid/inbound?token=$SENDGRID_INBOUND_SECRET`.
+- **SMS:** buy one Twilio number per workspace, set its incoming-message
+  webhook to `/api/webhooks/twilio/incoming`, and assign it:
+  `node scripts/assign-sms-number.mjs owner@example.com +15551234567`
+  (run from the app directory with the same `SMB_AI_OPS_DATA_DIR`).
+  `APP_BASE_URL` must be the exact public URL, because Twilio signs it.
+- **Slack:** create one Slack app (scopes, redirect URL and event
+  subscription are listed in `.env.example`). Each workspace connects its
+  own channel under Settings → Slack.
+
 ## Run
 
 ```bash

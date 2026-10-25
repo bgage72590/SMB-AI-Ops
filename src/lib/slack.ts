@@ -1,11 +1,20 @@
 // Slack integration — inbound messages from Slack and outbound
-// notifications to a Slack channel. Uses Slack's Incoming Webhooks
-// for sending and Events API for receiving.
+// notifications to a Slack channel.
 //
-// Set SLACK_WEBHOOK_URL to enable outbound notifications.
-// Set SLACK_SIGNING_SECRET to verify inbound event payloads.
+// Each workspace installs the operator's Slack app with "Add to Slack"
+// (OAuth). The install picks one channel: we keep its incoming-webhook URL
+// for outbound notifications, and route inbound Events API messages by
+// that (Slack team, channel) pair. Nothing is shared between workspaces.
+//
+// Operator env vars (from the Slack app's Basic Information page):
+//   SLACK_CLIENT_ID, SLACK_CLIENT_SECRET — OAuth install
+//   SLACK_SIGNING_SECRET                  — verifies inbound event payloads
+// The app needs the incoming-webhook and channels:history scopes, the
+// redirect URL {APP_BASE_URL}/api/slack/callback, and Event Subscriptions
+// (message.channels) pointed at {APP_BASE_URL}/api/webhooks/slack.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { User } from "./types";
 
 export interface SlackMessage {
   text: string;
@@ -20,18 +29,83 @@ export interface SlackBlock {
   elements?: Array<{ type: string; text: string; url?: string }>;
 }
 
-export function isSlackConfigured(): boolean {
-  return Boolean(process.env.SLACK_WEBHOOK_URL);
+export const SLACK_OAUTH_STATE_COOKIE = "slack_oauth_state";
+
+/** The operator's Slack app is set up, so workspaces can install it. */
+export function isSlackAppConfigured(): boolean {
+  return Boolean(
+    process.env.SLACK_CLIENT_ID &&
+      process.env.SLACK_CLIENT_SECRET &&
+      process.env.SLACK_SIGNING_SECRET
+  );
+}
+
+/** This workspace has installed Slack and can receive notifications. */
+export function isSlackConfigured(user: Pick<User, "slackWebhookUrl">): boolean {
+  return Boolean(user.slackWebhookUrl);
 }
 
 export function isSlackEventsConfigured(): boolean {
   return Boolean(process.env.SLACK_SIGNING_SECRET);
 }
 
+function slackRedirectUri(): string {
+  const base = process.env.APP_BASE_URL || "http://localhost:3000";
+  return `${base.replace(/\/$/, "")}/api/slack/callback`;
+}
+
+export function buildSlackInstallUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.SLACK_CLIENT_ID ?? "",
+    scope: "incoming-webhook,channels:history",
+    redirect_uri: slackRedirectUri(),
+    state,
+  });
+  return `https://slack.com/oauth/v2/authorize?${params}`;
+}
+
+export interface SlackInstall {
+  teamId: string;
+  channelId: string;
+  channelName: string;
+  webhookUrl: string;
+}
+
+/** Exchange the OAuth code for the install's team, channel and webhook. */
+export async function exchangeSlackCode(code: string): Promise<SlackInstall> {
+  const res = await fetch("https://slack.com/api/oauth.v2.access", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.SLACK_CLIENT_ID ?? "",
+      client_secret: process.env.SLACK_CLIENT_SECRET ?? "",
+      code,
+      redirect_uri: slackRedirectUri(),
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const data = (await res.json()) as {
+    ok: boolean;
+    error?: string;
+    team?: { id: string };
+    incoming_webhook?: { channel: string; channel_id: string; url: string };
+  };
+  if (!data.ok || !data.team?.id || !data.incoming_webhook?.url) {
+    throw new Error(`Slack OAuth failed: ${data.error ?? "missing install data"}`);
+  }
+  return {
+    teamId: data.team.id,
+    channelId: data.incoming_webhook.channel_id,
+    channelName: data.incoming_webhook.channel,
+    webhookUrl: data.incoming_webhook.url,
+  };
+}
+
 export async function sendSlackNotification(
+  user: Pick<User, "slackWebhookUrl">,
   message: SlackMessage
 ): Promise<boolean> {
-  const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+  const webhookUrl = user.slackWebhookUrl;
   if (!webhookUrl) return false;
 
   try {

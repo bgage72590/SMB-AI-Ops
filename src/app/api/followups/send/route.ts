@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getContact, getFollowUp, logAudit, updateFollowUp } from "@/lib/store";
 import { isEmailConfigured, sendEmail } from "@/lib/sendgrid";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
+import { canSendSms, sendSms, smsUnavailableReason } from "@/lib/twilio";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { trialGuardResponse } from "@/lib/trialGuard";
 
@@ -49,13 +49,9 @@ export async function POST(request: Request) {
   }
 
   if (followUp.channel === "sms") {
-    if (!isTwilioConfigured()) {
+    if (!canSendSms(user)) {
       return NextResponse.json(
-        {
-          error: "twilio_not_configured",
-          message:
-            "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER in .env to enable SMS.",
-        },
+        { error: "twilio_not_configured", message: smsUnavailableReason() },
         { status: 412 }
       );
     }
@@ -66,7 +62,11 @@ export async function POST(request: Request) {
       );
     }
     try {
-      const result = await sendSms({ to: contact.phone, body: followUp.draft });
+      const result = await sendSms({
+        to: contact.phone,
+        from: user.smsNumber!,
+        body: followUp.draft,
+      });
       const updated = updateFollowUp(user.id, followUp.id, {
         status: "sent",
         sentAt: new Date().toISOString(),
