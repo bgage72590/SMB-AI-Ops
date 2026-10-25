@@ -37,7 +37,8 @@ import {
   getEnrichmentCache,
   setEnrichmentCache,
 } from "./store";
-import type { Email } from "./types";
+import type { Email, WebhookEvent } from "./types";
+import { emitWebhookEvent } from "./webhooks";
 
 // The "brain" that turns a raw email into CRM side-effects. Every route
 // that wants to run the pipeline (manual trigger, webhook, cron) goes
@@ -94,15 +95,20 @@ export async function processEmail(
 
   const triage = await triageEmailSafe(email, { userId });
 
+  // Webhook events for what this email changed, sent once it's processed.
+  const events: Array<[WebhookEvent, Record<string, unknown>]> = [];
+
   // Resolve or create contact.
   let contactId: string | undefined;
   if (triage.suggested_contact) {
+    const existed = findContactByEmail(userId, triage.suggested_contact.email);
     const c = upsertContact(userId, {
       name: triage.suggested_contact.name,
       email: triage.suggested_contact.email,
       company: triage.suggested_contact.company,
     });
     contactId = c.id;
+    events.push([existed ? "contact.updated" : "contact.created", { contact: c }]);
   } else {
     const existing = findContactByEmail(userId, email.from);
     if (existing) {
@@ -113,6 +119,7 @@ export async function processEmail(
         email: email.from,
       });
       contactId = c.id;
+      events.push(["contact.created", { contact: c }]);
     }
   }
 
@@ -128,6 +135,12 @@ export async function processEmail(
         title: triage.suggested_deal.title || open.title,
       });
       dealId = updated?.id;
+      if (updated) {
+        events.push(["deal.updated", { deal: updated }]);
+        if (updated.stage !== open.stage) {
+          events.push(["deal.stage_changed", { deal: updated, previousStage: open.stage }]);
+        }
+      }
     } else {
       const created = createDeal(userId, {
         title: triage.suggested_deal.title,
@@ -137,6 +150,7 @@ export async function processEmail(
         nextStep: triage.suggested_deal.next_step,
       });
       dealId = created.id;
+      events.push(["deal.created", { deal: created }]);
     }
   } else if (contactId) {
     // Even without an explicit deal suggestion, if this is a deal_update,
@@ -218,12 +232,24 @@ export async function processEmail(
         icsData,
       });
       followUpId = created.id;
+      events.push(["followup.created", { followUp: created }]);
     }
   }
 
   // Mark the email processed and link back to anything we created.
   updateEmail(userId, email.id, {
     processed: true,
+    category: triage.category,
+    priority: triage.priority,
+    summary: triage.summary,
+    contactId,
+    dealId,
+    followUpId,
+  });
+
+  for (const [event, data] of events) emitWebhookEvent(userId, event, data);
+  emitWebhookEvent(userId, "email.processed", {
+    emailId: email.id,
     category: triage.category,
     priority: triage.priority,
     summary: triage.summary,

@@ -13,6 +13,7 @@ import {
   verifyInboundAuth,
   type SendGridInboundPayload,
 } from "@/lib/sendgrid";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 // When JOB_QUEUE_MODE=async the webhook persists the email, enqueues a
 // process_email job, and acks immediately. A separate drain
@@ -127,6 +128,7 @@ async function deliver(
     subject: payload.subject,
     body,
   });
+  emitWebhookEvent(owner.id, "email.received", { email });
 
   // Thread matching: check if this is a reply to a follow-up we sent
   if (payload.headers) {

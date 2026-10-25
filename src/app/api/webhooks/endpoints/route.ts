@@ -9,6 +9,7 @@ import {
   listRecentDeliveries,
 } from "@/lib/store";
 import { apiRoute } from "@/lib/guard";
+import { webhookUrlProblem } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,11 @@ export const POST = apiRoute({}, async (request, user) => {
     );
   }
 
+  const problem = webhookUrlProblem(parsed.data.url);
+  if (problem) {
+    return NextResponse.json({ error: "invalid_url", message: problem }, { status: 400 });
+  }
+
   const endpoint = createWebhookEndpoint(user.id, parsed.data);
   return NextResponse.json({ endpoint }, { status: 201 });
 });
@@ -82,6 +88,10 @@ export const PATCH = apiRoute({}, async (request, user) => {
   }
 
   const { id, ...rest } = parsed.data;
+  const problem = rest.url ? webhookUrlProblem(rest.url) : null;
+  if (problem) {
+    return NextResponse.json({ error: "invalid_url", message: problem }, { status: 400 });
+  }
   const endpoint = updateWebhookEndpoint(user.id, id, rest);
   if (!endpoint) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });

@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createDeal, listDeals, updateDeal } from "@/lib/store";
+import {
+  createDeal,
+  getDeal,
+  listDeals,
+  updateDeal,
+} from "@/lib/store";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { apiRoute } from "@/lib/guard";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -58,6 +64,7 @@ export const POST = apiRoute({}, async (request, user) => {
     );
   }
   const deal = createDeal(user.id, parsed.data);
+  emitWebhookEvent(user.id, "deal.created", { deal });
   return NextResponse.json({ deal }, { status: 201 });
 });
 
@@ -71,7 +78,12 @@ export const PATCH = apiRoute({}, async (request, user) => {
     );
   }
   const { id, ...rest } = parsed.data;
+  const before = getDeal(user.id, id);
   const deal = updateDeal(user.id, id, rest);
   if (!deal) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  emitWebhookEvent(user.id, "deal.updated", { deal });
+  if (before && before.stage !== deal.stage) {
+    emitWebhookEvent(user.id, "deal.stage_changed", { deal, previousStage: before.stage });
+  }
   return NextResponse.json({ deal });
 });

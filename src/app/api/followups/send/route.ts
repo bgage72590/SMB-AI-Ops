@@ -4,6 +4,7 @@ import { getContact, getFollowUp, logAudit, updateFollowUp } from "@/lib/store";
 import { isEmailConfigured, sendEmail } from "@/lib/sendgrid";
 import { canSendSms, sendSms, smsUnavailableReason } from "@/lib/twilio";
 import { apiRoute, chargePaid, requireFeature } from "@/lib/guard";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -61,6 +62,7 @@ export const POST = apiRoute({ rate: { bucket: "send", max: 30, windowMs: 10 * 6
         sentAt: new Date().toISOString(),
         sentMessageId: result.messageSid,
       });
+      emitWebhookEvent(user.id, "followup.sent", { followUp: updated });
       logAudit(user.id, "sent_sms", "followUp", followUp.id, `To: ${contact.phone}`);
       return NextResponse.json({ followUp: updated, messageSid: result.messageSid });
     } catch (err) {
@@ -93,6 +95,7 @@ export const POST = apiRoute({ rate: { bucket: "send", max: 30, windowMs: 10 * 6
       sentAt: new Date().toISOString(),
       sentMessageId: result.messageId,
     });
+    emitWebhookEvent(user.id, "followup.sent", { followUp: updated });
     logAudit(user.id, "sent", "followUp", followUp.id, `To: ${contact.email}`);
     return NextResponse.json({ followUp: updated, messageId: result.messageId });
   } catch (err) {

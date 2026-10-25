@@ -4,6 +4,7 @@ import { createEmail, listEmails } from "@/lib/store";
 import { processEmail } from "@/lib/pipeline";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { apiRoute } from "@/lib/guard";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,7 @@ export const POST = apiRoute({ rate: { bucket: "ingest", max: 60, windowMs: 60_0
   }
 
   const email = createEmail(user.id, parsed.data);
+  emitWebhookEvent(user.id, "email.received", { email });
   if (parsed.data.autoProcess) {
     const result = await processEmail(user.id, email);
     return NextResponse.json({ email, result }, { status: 201 });

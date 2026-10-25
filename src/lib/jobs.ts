@@ -20,6 +20,7 @@ import {
 import type { Deal } from "./types";
 import { processEmail } from "./pipeline";
 import { draftFollowUp } from "./ai";
+import { deliverWebhook, emitWebhookEvent } from "./webhooks";
 import { OPEN_DEAL_STAGES } from "./types";
 
 // Background job queue. Every long-ish piece of work the product needs
@@ -41,7 +42,7 @@ import { OPEN_DEAL_STAGES } from "./types";
 const DEFAULT_BATCH = 10;
 const DEFAULT_BATCH_TIMEOUT_MS = 50_000; // leave headroom under 60s platform cap
 
-export type JobType = "process_email" | "deal_decay_nudge";
+export type JobType = "process_email" | "deal_decay_nudge" | "deliver_webhook";
 
 const PROCESS_EMAIL_PAYLOAD = z.object({
   userId: z.string(),
@@ -51,6 +52,13 @@ const PROCESS_EMAIL_PAYLOAD = z.object({
 const DEAL_DECAY_PAYLOAD = z.object({
   userId: z.string(),
   dealId: z.string(),
+});
+
+const DELIVER_WEBHOOK_PAYLOAD = z.object({
+  userId: z.string(),
+  endpointId: z.string(),
+  event: z.string(),
+  body: z.string(),
 });
 
 interface RunJobsResult {
@@ -133,13 +141,14 @@ async function dispatch(job: Job): Promise<void> {
         context: `This deal has been quiet for several days. Draft a friendly check-in to keep things moving.`,
         userId: parsed.userId,
       });
-      createFollowUp(parsed.userId, {
+      const nudge = createFollowUp(parsed.userId, {
         contactId: contact.id,
         dealId: deal.id,
         subject: draft.subject,
         draft: draft.body,
         reason: `Deal "${deal.title}" has gone cold — auto-nudge`,
       });
+      emitWebhookEvent(parsed.userId, "followup.created", { followUp: nudge });
       logAudit(
         parsed.userId,
         "decay_nudge",
@@ -147,6 +156,10 @@ async function dispatch(job: Job): Promise<void> {
         deal.id,
         `Auto-drafted nudge for "${deal.title}"`
       );
+      return;
+    }
+    case "deliver_webhook": {
+      await deliverWebhook(DELIVER_WEBHOOK_PAYLOAD.parse(job.payload));
       return;
     }
     default:
