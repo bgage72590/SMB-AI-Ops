@@ -10,6 +10,7 @@ import {
 import { draftFollowUp } from "@/lib/ai";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { apiRoute } from "@/lib/guard";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -74,6 +75,7 @@ export const POST = apiRoute({}, async (request, user) => {
     draft: draft.body,
     reason: draft.reason,
   });
+  emitWebhookEvent(user.id, "followup.created", { followUp });
 
   return NextResponse.json({ followUp }, { status: 201 });
 });

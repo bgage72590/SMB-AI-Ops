@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { isWidgetConfigured, generateWidgetToken } from "@/lib/widget";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
+import { hasFeature } from "@/lib/plans";
+import { UpgradeNotice } from "@/components/UpgradeNotice";
 
 export default async function WidgetSettingsPage() {
   let user;
@@ -12,13 +14,17 @@ export default async function WidgetSettingsPage() {
   }
 
   const configured = isWidgetConfigured();
-  const token = configured ? generateWidgetToken(user.id) : null;
+  const entitled = hasFeature(user, "chat_widget");
+  const token = configured && entitled ? generateWidgetToken(user.id) : null;
 
-  const origin =
+  // The embed runs on the customer's site, so it needs this app's public
+  // URL. (This used to be `A || B ? x : y`, which parses as `(A || B) ? x
+  // : y` and produced https://undefined anywhere but Vercel.)
+  const origin = (
+    process.env.APP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
 
   const snippet = token
     ? `<!-- SMB AI Ops Chat Widget -->
@@ -71,7 +77,9 @@ export default async function WidgetSettingsPage() {
         description="Embed a lead capture form on your website"
       />
 
-      {!configured ? (
+      {!entitled ? (
+        <UpgradeNotice feature="chat_widget" label="The website chat widget" />
+      ) : !configured ? (
         <Card>
           <CardBody>
             <p className="text-sm text-fg-muted">

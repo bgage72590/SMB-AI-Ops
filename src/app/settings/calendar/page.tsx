@@ -5,6 +5,8 @@ import { getUserById } from "@/lib/store";
 import { isGoogleCalendarConfigured } from "@/lib/google-calendar";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { CalendarActions } from "@/components/CalendarActions";
+import { hasFeature } from "@/lib/plans";
+import { UpgradeNotice } from "@/components/UpgradeNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -51,9 +53,12 @@ export default async function CalendarPage() {
             </p>
           )}
 
-          {googleConfigured && (
-            <CalendarActions connected={connected} />
-          )}
+          {googleConfigured &&
+            (hasFeature(fresh, "calendar_sync") || connected ? (
+              <CalendarActions connected={connected} />
+            ) : (
+              <UpgradeNotice feature="calendar_sync" label="Google Calendar sync" />
+            ))}
         </CardBody>
       </Card>
     </main>

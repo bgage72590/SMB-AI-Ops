@@ -37,9 +37,9 @@ export const PLANS: PlanDefinition[] = [
     aiTriagesPerMonth: 25,
     features: [
       "25 emails / month",
-      "AI triage & follow-ups",
-      "Basic CRM (clients + jobs)",
-      "Email notifications",
+      "AI triage & follow-up drafts",
+      "CRM for clients, jobs & quotes",
+      "Daily alert email",
     ],
   },
   {
@@ -52,11 +52,11 @@ export const PLANS: PlanDefinition[] = [
     highlighted: true,
     features: [
       "250 emails / month",
-      "AI triage & follow-ups",
-      "Full CRM with job costing",
-      "Calendar invites (.ics)",
-      "Email threading",
-      "Priority support",
+      "Everything in Free",
+      "Two-way texting with clients",
+      "Pipeline reports & the Ask box",
+      "Google Calendar & .ics invites",
+      "Website chat widget",
     ],
   },
   {
@@ -68,11 +68,10 @@ export const PLANS: PlanDefinition[] = [
     aiTriagesPerMonth: -1,
     features: [
       "Unlimited emails",
-      "Unlimited AI triages",
       "Everything in Starter",
-      "Custom AI budget controls",
-      "Stripe invoice tracking",
-      "Dedicated onboarding",
+      "Slack alerts & channel triage",
+      "Lead enrichment",
+      "Higher daily AI, email & text limits",
     ],
   },
 ];

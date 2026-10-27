@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { listContacts, upsertContact, updateContact } from "@/lib/store";
+import { findContactByEmail, listContacts, upsertContact, updateContact } from "@/lib/store";
 import { AuthError, requireUserForApi } from "@/lib/auth";
 import { apiRoute } from "@/lib/guard";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,9 @@ export const POST = apiRoute({}, async (request, user) => {
       { status: 400 }
     );
   }
+  const existed = findContactByEmail(user.id, parsed.data.email);
   const contact = upsertContact(user.id, parsed.data);
+  emitWebhookEvent(user.id, existed ? "contact.updated" : "contact.created", { contact });
   return NextResponse.json({ contact }, { status: 201 });
 });
 
@@ -60,5 +63,6 @@ export const PATCH = apiRoute({}, async (request, user) => {
   const { id, ...rest } = parsed.data;
   const contact = updateContact(user.id, id, rest);
   if (!contact) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  emitWebhookEvent(user.id, "contact.updated", { contact });
   return NextResponse.json({ contact });
 });

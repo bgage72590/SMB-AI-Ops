@@ -6,6 +6,8 @@ import { formatCurrency } from "@/lib/format";
 import { StageBadge } from "@/components/Badge";
 import { listDeals } from "@/lib/store";
 import type { Metadata } from "next";
+import { hasFeature } from "@/lib/plans";
+import { UpgradeNotice } from "@/components/UpgradeNotice";
 
 export const metadata: Metadata = {
   title: "Reports | SMB AI Ops",
@@ -43,6 +45,15 @@ export default async function ReportsPage() {
     user = await requireUser();
   } catch {
     redirect("/login");
+  }
+
+  if (!hasFeature(user, "pipeline_reports")) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-semibold text-fg">Reports</h1>
+        <UpgradeNotice feature="pipeline_reports" label="Pipeline reports" />
+      </div>
+    );
   }
 
   const report = generatePipelineReport(user.id);

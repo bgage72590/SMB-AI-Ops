@@ -4,6 +4,7 @@ import { verifyWidgetToken, isWidgetConfigured } from "@/lib/widget";
 import { createEmail, getUserById } from "@/lib/store";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { hasFeature } from "@/lib/plans";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -70,13 +71,14 @@ export async function POST(request: Request) {
     ? `${parsed.data.message}\n\nPhone: ${parsed.data.phone}`
     : parsed.data.message;
 
-  createEmail(owner.id, {
+  const email = createEmail(owner.id, {
     from: parsed.data.email,
     fromName: parsed.data.name,
     to: owner.email,
     subject: `Website inquiry from ${parsed.data.name}`,
     body,
   });
+  emitWebhookEvent(owner.id, "email.received", { email });
 
   const allowedOrigin = process.env.WIDGET_ALLOWED_ORIGIN || "*";
   const response = NextResponse.json({ ok: true });

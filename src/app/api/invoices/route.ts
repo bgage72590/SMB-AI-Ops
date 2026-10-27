@@ -9,6 +9,7 @@ import {
 } from "@/lib/store";
 import type { InvoiceType, InvoiceStatus } from "@/lib/types";
 import { apiRoute } from "@/lib/guard";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -72,6 +73,7 @@ export const POST = apiRoute({}, async (request, user) => {
   }
 
   const invoice = createInvoice(user.id, parsed.data);
+  emitWebhookEvent(user.id, "invoice.created", { invoice });
   return NextResponse.json({ invoice }, { status: 201 });
 });
 
@@ -86,9 +88,13 @@ export const PATCH = apiRoute({}, async (request, user) => {
   }
 
   const { id, ...rest } = parsed.data;
+  const before = getInvoice(user.id, id);
   const invoice = updateInvoice(user.id, id, rest);
   if (!invoice) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+  if (before && before.status !== invoice.status) {
+    emitWebhookEvent(user.id, "invoice.status_changed", { invoice, previousStatus: before.status });
   }
   return NextResponse.json({ invoice });
 });

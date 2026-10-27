@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifySlackSignature, isSlackEventsConfigured } from "@/lib/slack";
 import { createEmail, findUserBySlackChannel } from "@/lib/store";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    createEmail(owner.id, {
+    const email = createEmail(owner.id, {
       from: `slack:${event.user || "unknown"}`,
       fromName: event.user_profile?.real_name || event.user || "Slack User",
       to: owner.email,
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
         ? new Date(parseFloat(event.ts) * 1000).toISOString()
         : new Date().toISOString(),
     });
+    emitWebhookEvent(owner.id, "email.received", { email });
 
     return NextResponse.json({ ok: true });
   }

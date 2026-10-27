@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { upsertContact } from "@/lib/store";
+import { findContactByEmail, upsertContact } from "@/lib/store";
 import { apiRoute } from "@/lib/guard";
+import { emitWebhookEvent } from "@/lib/webhooks";
 
 export const runtime = "nodejs";
 
@@ -128,13 +129,15 @@ export const POST = apiRoute({ rate: { bucket: "import", max: 10, windowMs: 10 *
   let skipped = 0;
   for (const row of rows) {
     try {
-      upsertContact(user.id, {
+      const existed = findContactByEmail(user.id, row.email);
+      const contact = upsertContact(user.id, {
         name: row.name,
         email: row.email,
         company: row.company,
         phone: row.phone,
         notes: row.notes,
       });
+      emitWebhookEvent(user.id, existed ? "contact.updated" : "contact.created", { contact });
       imported++;
     } catch {
       skipped++;

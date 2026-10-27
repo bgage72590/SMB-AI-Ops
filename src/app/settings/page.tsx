@@ -165,15 +165,6 @@ export default async function SettingsPage() {
               </p>
             </Link>
             <Link
-              href="/settings/team"
-              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
-            >
-              <h3 className="font-medium text-sm text-fg">Team</h3>
-              <p className="text-xs text-fg-muted mt-1">
-                Invite a second owner to your workspace
-              </p>
-            </Link>
-            <Link
               href="/settings/domain"
               className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
             >

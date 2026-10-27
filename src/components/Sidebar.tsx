@@ -26,7 +26,6 @@ const NAV_ITEMS: Array<{
   { href: "/activity", label: "Activity", icon: "activity" },
   { href: "/invoices", label: "Quotes", icon: "file-text" },
   { href: "/sms", label: "SMS", icon: "message-circle" },
-  { href: "/automations", label: "Automations", icon: "zap" },
   { href: "/reports", label: "Reports", icon: "bar-chart" },
 ];
 
@@ -107,12 +106,6 @@ function NavIcon({ name, className }: { name: string; className?: string }) {
       return (
         <svg {...props}>
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-        </svg>
-      );
-    case "zap":
-      return (
-        <svg {...props}>
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
       );
     case "file-text":

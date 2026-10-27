@@ -12,16 +12,13 @@ export type Feature =
   | "job_costing"
   | "calendar_ics"
   | "email_threading"
-  | "ai_budget_controls"
   | "calendar_sync"
   | "sms_followups"
-  | "team_members"
   | "pipeline_reports"
   | "lead_enrichment"
   | "slack_integration"
   | "chat_widget"
-  | "ask_box"
-  | "custom_fields";
+  | "ask_box";
 
 /**
  * The tier an account gets right now. A live subscription gets what it
@@ -57,12 +54,8 @@ export function hasFeature(user: User, feature: Feature): boolean {
     case "ask_box":
     case "chat_widget":
       return TIER_RANK[tier] >= TIER_RANK.starter;
-    case "ai_budget_controls":
-    case "team_members":
-      return TIER_RANK[tier] >= TIER_RANK.pro;
     case "lead_enrichment":
     case "slack_integration":
-    case "custom_fields":
       return TIER_RANK[tier] >= TIER_RANK.pro;
   }
 }

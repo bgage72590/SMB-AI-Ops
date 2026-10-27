@@ -50,8 +50,6 @@ export interface User {
   outlookRefreshToken?: string;
   outlookConnected?: boolean;
   outlookEmail?: string;
-  /** Workspace ID for team collaboration (Phase 3.3). */
-  workspaceId?: string;
   /** Twilio number assigned to this user (E.164). SMS in and out uses it. */
   smsNumber?: string;
   /** Slack install: inbound messages from this workspace + channel route here. */

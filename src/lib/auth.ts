@@ -8,13 +8,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { User } from "./types";
 import {
-  acceptWorkspaceInvite,
   consumeEmailVerificationToken,
   createEmailVerificationToken,
   createPasswordResetToken,
   createSessionRow,
   createUserRow,
-  createWorkspace,
   deleteExpiredEmailVerificationTokens,
   deleteExpiredPasswordResetTokens,
   deleteSession,
@@ -22,7 +20,6 @@ import {
   findPasswordResetToken,
   findUserByInboundAddress,
   getPasswordHashByEmail,
-  getPendingInviteForEmail,
   getSession,
   getUserByEmail,
   getUserById,
@@ -110,13 +107,6 @@ export function signup(input: SignupInput): AuthResult {
   ).toISOString();
   updateUserStripe(user.id, { trialEndsAt });
   user.trialEndsAt = trialEndsAt;
-
-  const pendingInvite = getPendingInviteForEmail(email);
-  if (pendingInvite) {
-    acceptWorkspaceInvite(pendingInvite.id, user.id);
-  } else {
-    createWorkspace(`${name}'s workspace`, user.id);
-  }
 
   seedWorkspace(user.id);
 
