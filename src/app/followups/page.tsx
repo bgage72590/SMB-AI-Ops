@@ -3,7 +3,7 @@ import { DraftReviewList } from "@/components/DraftReviewList";
 import { getContact, getDeal, listFollowUps } from "@/lib/store";
 import { formatRelative } from "@/lib/format";
 import { isEmailConfigured } from "@/lib/sendgrid";
-import { isTwilioConfigured } from "@/lib/twilio";
+import { canSendSms as canSendSmsFor } from "@/lib/twilio";
 import { requireUser } from "@/lib/auth";
 import type { Metadata } from "next";
 
@@ -14,13 +14,13 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function FollowUpsPage() {
-  const user = requireUser();
+export default async function FollowUpsPage() {
+  const user = await requireUser();
   const followUps = listFollowUps(user.id);
   const drafts = followUps.filter((f) => f.status === "draft");
   const rest = followUps.filter((f) => f.status !== "draft");
   const canSend = isEmailConfigured();
-  const canSendSms = isTwilioConfigured();
+  const canSendSms = canSendSmsFor(user);
 
   const draftData = drafts.map((f) => {
     const contact = getContact(user.id, f.contactId);

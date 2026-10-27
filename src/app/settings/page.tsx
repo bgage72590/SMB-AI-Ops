@@ -14,10 +14,10 @@ export const metadata: Metadata = {
   description: "Configure your workspace.",
 };
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }
@@ -153,6 +153,15 @@ export default function SettingsPage() {
               <h3 className="font-medium text-sm text-fg">Calendar</h3>
               <p className="text-xs text-fg-muted mt-1">
                 Google Calendar for smart scheduling
+              </p>
+            </Link>
+            <Link
+              href="/settings/slack"
+              className="rounded-lg border border-border p-4 hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <h3 className="font-medium text-sm text-fg">Slack</h3>
+              <p className="text-xs text-fg-muted mt-1">
+                Lead alerts and channel triage
               </p>
             </Link>
             <Link

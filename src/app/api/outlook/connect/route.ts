@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     if (!isOutlookOAuthConfigured()) {
       return NextResponse.json(
         { error: "not_configured", message: "Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET." },

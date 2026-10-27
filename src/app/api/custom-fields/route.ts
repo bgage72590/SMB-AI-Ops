@@ -7,6 +7,7 @@ import {
   getCustomFieldSchema,
   setCustomFieldSchema,
 } from "@/lib/store";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -38,7 +39,7 @@ const SchemaUpdateSchema = z.object({
 export async function GET(request: Request) {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });
@@ -86,17 +87,7 @@ export async function GET(request: Request) {
  * Body: { entityType, schema: Array<{ key, label, type, options? }> }
  * Updates the custom field schema for an entity type.
  */
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ feature: "custom_fields" }, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = UpdateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -114,19 +105,9 @@ export async function POST(request: Request) {
   );
 
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function PUT(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const PUT = apiRoute({ feature: "custom_fields" }, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = SchemaUpdateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -138,4 +119,4 @@ export async function PUT(request: Request) {
 
   setCustomFieldSchema(user.id, parsed.data.entityType, parsed.data.schema);
   return NextResponse.json({ ok: true });
-}
+});

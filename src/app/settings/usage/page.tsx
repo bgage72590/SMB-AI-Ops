@@ -7,10 +7,10 @@ import { formatUsdFine } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default function UsagePage() {
+export default async function UsagePage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

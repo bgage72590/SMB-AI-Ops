@@ -1,21 +1,11 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import { getUserById, updateUserGmail, upsertEmailFromGmail } from "@/lib/store";
 import { fetchRecentMessages, refreshGmailToken } from "@/lib/gmail";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
-export async function POST() {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ rate: { bucket: "sync", max: 10, windowMs: 10 * 60_000 } }, async (_request, user) => {
   const fresh = getUserById(user.id);
   if (!fresh?.gmailConnected || !fresh.gmailAccessToken || !fresh.gmailRefreshToken) {
     return NextResponse.json(
@@ -91,4 +81,4 @@ export async function POST() {
     }
     throw err;
   }
-}
+});

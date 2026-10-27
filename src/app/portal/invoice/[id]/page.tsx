@@ -29,11 +29,10 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function PortalInvoicePage({
-  params,
-}: {
-  params: { id: string };
+export default async function PortalInvoicePage(props: {
+  params: Promise<{ id: string }>;
 }) {
+  const params = await props.params;
   const invoice = getInvoicePublic(params.id);
   if (!invoice) notFound();
 

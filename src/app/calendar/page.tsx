@@ -23,14 +23,13 @@ export interface CalendarEvent {
   href?: string;
 }
 
-export default function CalendarPage({
-  searchParams,
-}: {
-  searchParams?: { month?: string };
+export default async function CalendarPage(props: {
+  searchParams?: Promise<{ month?: string }>;
 }) {
+  const searchParams = await props.searchParams;
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

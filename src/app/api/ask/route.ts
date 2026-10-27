@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import { getUserById } from "@/lib/store";
 import { askQuestion } from "@/lib/ask";
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -17,26 +16,7 @@ const AskSchema = z.object({
  *
  * Open-ended AI question answering with full CRM context.
  */
-export async function POST(request: Request) {
-  const ip = getClientIp(request);
-  const limit = checkRateLimit(`ask:${ip}`, 20, 15 * 60 * 1000);
-  if (!limit.allowed) {
-    return NextResponse.json(
-      { error: "rate_limited", retryAfterMs: limit.retryAfterMs },
-      { status: 429 }
-    );
-  }
-
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ feature: "ask_box", rate: { bucket: "ask", max: 20, windowMs: 15 * 60_000 } }, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = AskSchema.safeParse(payload);
   if (!parsed.success) {
@@ -53,4 +33,4 @@ export async function POST(request: Request) {
 
   const result = await askQuestion(fresh, parsed.data.question);
   return NextResponse.json(result);
-}
+});

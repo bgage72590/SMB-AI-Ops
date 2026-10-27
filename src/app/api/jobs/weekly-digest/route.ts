@@ -9,17 +9,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * Scheduled entry point for the weekly AI digest. Point your scheduler
- * of choice at this URL with `Authorization: Bearer $CRON_SECRET` and
- * run it Monday morning.
+ * Entry point for the weekly AI digest (Mondays, 13:00 UTC).
  *
- * Vercel cron example (vercel.json):
- * {
- *   "crons": [
- *     { "path": "/api/jobs/weekly-digest", "schedule": "0 13 * * 1" }
- *   ]
- * }
- * (13:00 UTC = 8am US Eastern.)
+ * Runs automatically from the in-process scheduler (src/lib/scheduler.ts).
+ * This route is a manual trigger: `Authorization: Bearer $CRON_SECRET`.
  */
 export async function POST(request: Request) {
   if (!verifyCronSecret(request)) {

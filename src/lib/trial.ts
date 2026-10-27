@@ -1,3 +1,4 @@
+import { effectiveTier } from "./plans";
 import type { User } from "./types";
 
 export interface TrialStatus {
@@ -5,19 +6,16 @@ export interface TrialStatus {
   isPaid: boolean;
   /** User has an active trial that hasn't expired. */
   isTrialing: boolean;
-  /** Trial has expired and user has not paid. */
+  /** Trial has expired and user has not paid: they're on the Free plan. */
   isExpired: boolean;
   /** Days remaining on trial. 0 if expired or paid. */
   daysRemaining: number;
-  /** Whether write operations should be blocked. */
-  writeBlocked: boolean;
 }
 
 export function checkTrial(user: User): TrialStatus {
-  const isPaid =
-    user.subscriptionStatus === "active" ||
-    user.planTier === "starter" ||
-    user.planTier === "pro";
+  // Same rule as effectiveTier(): a non-free tier counts unless Stripe
+  // says the subscription lapsed.
+  const isPaid = effectiveTier({ ...user, trialEndsAt: undefined }) !== "free";
 
   if (isPaid) {
     return {
@@ -25,7 +23,6 @@ export function checkTrial(user: User): TrialStatus {
       isTrialing: false,
       isExpired: false,
       daysRemaining: 0,
-      writeBlocked: false,
     };
   }
 
@@ -35,7 +32,6 @@ export function checkTrial(user: User): TrialStatus {
       isTrialing: false,
       isExpired: false,
       daysRemaining: 0,
-      writeBlocked: false,
     };
   }
 
@@ -49,7 +45,6 @@ export function checkTrial(user: User): TrialStatus {
       isTrialing: false,
       isExpired: true,
       daysRemaining: 0,
-      writeBlocked: true,
     };
   }
 
@@ -59,6 +54,5 @@ export function checkTrial(user: User): TrialStatus {
     isTrialing: true,
     isExpired: false,
     daysRemaining,
-    writeBlocked: false,
   };
 }

@@ -37,10 +37,10 @@ function getMonthLabel(ym: string) {
   return labels[parseInt(m, 10) - 1] + " " + y.slice(2);
 }
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

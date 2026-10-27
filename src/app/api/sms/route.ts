@@ -7,7 +7,8 @@ import {
   listSmsConversations,
   listSmsMessages,
 } from "@/lib/store";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
+import { canSendSms, sendSms, smsUnavailableReason } from "@/lib/twilio";
+import { apiRoute, chargePaid } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ const SendSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     const url = new URL(request.url);
     const contactId = url.searchParams.get("contactId");
     if (contactId) {
@@ -35,20 +36,10 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
-  if (!isTwilioConfigured()) {
+export const POST = apiRoute({ feature: "sms_followups", rate: { bucket: "sms", max: 20, windowMs: 10 * 60_000 } }, async (request, user) => {
+  if (!canSendSms(user)) {
     return NextResponse.json(
-      { error: "twilio_not_configured", message: "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER." },
+      { error: "twilio_not_configured", message: smsUnavailableReason(user) },
       { status: 400 }
     );
   }
@@ -73,8 +64,10 @@ export async function POST(request: Request) {
     );
   }
 
+  chargePaid(user, "sms");
   const result = await sendSms({
     to: contact.phone,
+    from: user.smsNumber!,
     body: parsed.data.body,
   });
 
@@ -82,7 +75,7 @@ export async function POST(request: Request) {
     userId: user.id,
     contactId: contact.id,
     direction: "outbound",
-    fromNumber: process.env.TWILIO_FROM_NUMBER!,
+    fromNumber: user.smsNumber!,
     toNumber: contact.phone,
     body: parsed.data.body,
     twilioSid: result.messageSid,
@@ -90,4 +83,4 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ message: msg }, { status: 201 });
-}
+});

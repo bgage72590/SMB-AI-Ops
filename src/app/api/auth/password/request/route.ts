@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requestPasswordReset } from "@/lib/auth";
-import { isEmailConfigured, sendEmail } from "@/lib/sendgrid";
+import { sendAccountLink } from "@/lib/accountEmail";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -13,9 +13,8 @@ const RequestSchema = z.object({ email: z.string().email() });
  * returns `{ ok: true }` regardless of whether the email exists — the
  * response must not leak whether an account is registered.
  *
- * In production, with SENDGRID_API_KEY + SENDGRID_FROM_EMAIL set,
- * we mail the reset link via SendGrid. Otherwise we log it to stdout so
- * the developer can still walk the flow locally.
+ * The link goes out through sendAccountLink(): SendGrid when configured,
+ * the dev log otherwise, and never the log in production.
  */
 export async function POST(request: Request) {
   const ip = getClientIp(request);
@@ -35,25 +34,16 @@ export async function POST(request: Request) {
   const { resetUrl } = requestPasswordReset({ email: parsed.data.email });
 
   if (resetUrl) {
-    if (isEmailConfigured()) {
-      try {
-        await sendEmail({
-          to: parsed.data.email,
-          subject: "Reset your SMB AI Ops password",
-          body:
-            `Someone requested a password reset for this account.\n\n` +
-            `Open this link within the next hour to set a new password:\n${resetUrl}\n\n` +
-            `If you didn't request this, you can safely ignore this email — your password won't change.`,
-        });
-      } catch (err) {
-        // Don't leak the failure to the client, but surface it in server
-        // logs so operators can spot an outage.
-        console.error("[password-reset] send failed", err);
-      }
-    } else {
-      // Dev fallback — the URL is the only way to actually walk the flow.
-      console.log(`[password-reset] ${parsed.data.email} -> ${resetUrl}`);
-    }
+    await sendAccountLink({
+      to: parsed.data.email,
+      url: resetUrl,
+      purpose: "password-reset",
+      subject: "Reset your SMB AI Ops password",
+      body:
+        `Someone requested a password reset for this account.\n\n` +
+        `Open this link within the next hour to set a new password:\n${resetUrl}\n\n` +
+        `If you didn't request this, you can safely ignore this email — your password won't change.`,
+    });
   }
 
   return NextResponse.json({ ok: true });

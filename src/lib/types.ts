@@ -19,9 +19,9 @@ export interface User {
   email: string;
   name: string;
   /**
-   * Optional per-user inbound address. When set, incoming SendGrid webhooks
-   * whose `To` header matches this value are routed to this user. When not
-   * set, the inbound webhook falls back to the first user in the database.
+   * Per-user inbound address. Incoming SendGrid mail whose envelope
+   * recipient matches this value is routed to this user. Mail that matches
+   * no user is dropped, never routed to a default account.
    */
   inboundAddress?: string;
   /**
@@ -52,6 +52,16 @@ export interface User {
   outlookEmail?: string;
   /** Workspace ID for team collaboration (Phase 3.3). */
   workspaceId?: string;
+  /** Twilio number assigned to this user (E.164). SMS in and out uses it. */
+  smsNumber?: string;
+  /** Slack install: inbound messages from this workspace + channel route here. */
+  slackTeamId?: string;
+  slackChannelId?: string;
+  slackChannelName?: string;
+  /** Incoming-webhook URL from the Slack install, for outbound notifications. */
+  slackWebhookUrl?: string;
+  /** When the owner clicked the verification link. Paid calls need it. */
+  emailVerifiedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

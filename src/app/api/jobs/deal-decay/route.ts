@@ -9,12 +9,8 @@ export const dynamic = "force-dynamic";
  * Daily cron that scans for stale deals (no activity in 5+ days) and
  * enqueues follow-up nudge jobs. Run once a day.
  *
- * Vercel cron example (vercel.json):
- * {
- *   "crons": [
- *     { "path": "/api/jobs/deal-decay", "schedule": "0 14 * * *" }
- *   ]
- * }
+ * Runs automatically from the in-process scheduler (src/lib/scheduler.ts).
+ * This route is a manual trigger: `Authorization: Bearer $CRON_SECRET`.
  */
 export async function POST(request: Request) {
   if (!verifyCronSecret(request)) {

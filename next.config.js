@@ -1,12 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  experimental: {
-    // Keep native + large server-only deps out of the webpack bundle; Next
-    // will resolve them at runtime instead. `better-sqlite3` has a .node
-    // binary so it MUST be external.
-    serverComponentsExternalPackages: ["@anthropic-ai/sdk", "better-sqlite3"],
-  },
+  // Self-contained server bundle in .next/standalone for the VM deploy.
+  output: "standalone",
+  // Pin the workspace root to this repo so a stray lockfile higher up
+  // the tree doesn't change what gets traced into the bundle.
+  turbopack: { root: __dirname },
+  outputFileTracingRoot: __dirname,
+  // Keep native + large server-only deps out of the bundle; Next will
+  // resolve them at runtime instead. `better-sqlite3` has a .node binary
+  // so it MUST be external.
+  serverExternalPackages: ["@anthropic-ai/sdk", "better-sqlite3"],
   async headers() {
     return [
       {

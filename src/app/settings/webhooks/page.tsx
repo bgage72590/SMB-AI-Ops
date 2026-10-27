@@ -7,10 +7,10 @@ import { WebhookManager } from "@/components/WebhookManager";
 
 export const dynamic = "force-dynamic";
 
-export default function WebhooksPage() {
+export default async function WebhooksPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

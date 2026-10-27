@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { listSmsConversations, listContacts } from "@/lib/store";
-import { isTwilioConfigured } from "@/lib/twilio";
+import { canSendSms, smsUnavailableReason } from "@/lib/twilio";
 import { SmsConversationView } from "@/components/SmsConversationView";
 import { formatRelative } from "@/lib/format";
 import Link from "next/link";
@@ -13,13 +13,12 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function SmsPage({
-  searchParams,
-}: {
-  searchParams?: { contactId?: string };
+export default async function SmsPage(props: {
+  searchParams?: Promise<{ contactId?: string }>;
 }) {
-  const user = requireUser();
-  const configured = isTwilioConfigured();
+  const searchParams = await props.searchParams;
+  const user = await requireUser();
+  const configured = canSendSms(user);
   const conversations = listSmsConversations(user.id);
   const contacts = listContacts(user.id).filter((c) => c.phone);
   const activeContactId = searchParams?.contactId;
@@ -35,9 +34,8 @@ export default function SmsPage({
 
       {!configured && (
         <div className="rounded-lg border border-warning/30 bg-warning-soft p-4 text-sm text-fg-muted">
-          <strong className="text-fg">Twilio not configured.</strong> Set
-          TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER in your
-          .env to enable SMS.
+          <strong className="text-fg">Texting is off.</strong>{" "}
+          {smsUnavailableReason(user)}
         </div>
       )}
 

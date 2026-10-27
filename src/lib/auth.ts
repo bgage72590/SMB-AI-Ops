@@ -9,10 +9,13 @@ import { redirect } from "next/navigation";
 import type { User } from "./types";
 import {
   acceptWorkspaceInvite,
+  consumeEmailVerificationToken,
+  createEmailVerificationToken,
   createPasswordResetToken,
   createSessionRow,
   createUserRow,
   createWorkspace,
+  deleteExpiredEmailVerificationTokens,
   deleteExpiredPasswordResetTokens,
   deleteSession,
   deleteSessionsForUser,
@@ -198,8 +201,8 @@ function issueSession(userId: string): {
  * Resolve the current user from the session cookie. Returns null if the
  * caller isn't signed in, if the session was revoked, or if it's expired.
  */
-export function getCurrentUser(): User | null {
-  const sessionId = cookies().get(SESSION_COOKIE)?.value;
+export async function getCurrentUser(): Promise<User | null> {
+  const sessionId = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!sessionId) return null;
 
   const session = getSession(sessionId);
@@ -224,16 +227,16 @@ export function getCurrentUser(): User | null {
  * AuthError("unauthorized") and return 401 so they don't accidentally
  * issue a redirect response to fetch() callers.
  */
-export function requireUser(options: { redirectTo?: string } = {}): User {
-  const user = getCurrentUser();
+export async function requireUser(options: { redirectTo?: string } = {}): Promise<User> {
+  const user = await getCurrentUser();
   if (user) return user;
   if (typeof options.redirectTo === "string") redirect(options.redirectTo);
   redirect("/login");
 }
 
 // For API routes: same idea, but throws instead of redirecting.
-export function requireUserForApi(): User {
-  const user = getCurrentUser();
+export async function requireUserForApi(): Promise<User> {
+  const user = await getCurrentUser();
   if (!user) throw new AuthError("unauthorized");
   return user;
 }
@@ -312,6 +315,47 @@ export function completePasswordReset(input: {
   updateUserPasswordHash(row.userId, hashPassword(input.newPassword));
   markPasswordResetTokenUsed(row.id);
   deleteSessionsForUser(row.userId);
+}
+
+// ---------- Email verification ----------
+
+const VERIFY_TOKEN_TTL_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Mint a verification link for a user's email address. Like reset
+ * tokens, only a SHA-256 hash is stored. Returns the URL to send.
+ */
+export function issueEmailVerification(userId: string): string {
+  try {
+    deleteExpiredEmailVerificationTokens();
+  } catch {
+    // best-effort
+  }
+  const plaintext = randomBytes(RESET_TOKEN_BYTES).toString("base64url");
+  createEmailVerificationToken({
+    userId,
+    tokenHash: hashResetToken(plaintext),
+    expiresAt: new Date(Date.now() + VERIFY_TOKEN_TTL_MS).toISOString(),
+  });
+  const base = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  return `${base.replace(/\/$/, "")}/api/auth/verify?token=${encodeURIComponent(plaintext)}`;
+}
+
+/** Consume a verification token and mark the account verified. */
+export function verifyEmail(token: string): string {
+  const result = consumeEmailVerificationToken(hashResetToken(token.trim()));
+  if ("error" in result) throw new AuthError(result.error);
+  return result.userId;
+}
+
+export function verificationEmail(name: string, url: string): { subject: string; body: string } {
+  return {
+    subject: "Confirm your email for SMB AI Ops",
+    body:
+      `Hi ${name},\n\n` +
+      `Confirm this is your email address to turn on AI triage, sending and texting:\n${url}\n\n` +
+      `The link works for 48 hours. If you didn't sign up, you can ignore this email.`,
+  };
 }
 
 // ---------- Errors ----------

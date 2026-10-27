@@ -1,20 +1,10 @@
 import { NextResponse } from "next/server";
 import { getFollowUp } from "@/lib/store";
-import { AuthError, requireUserForApi } from "@/lib/auth";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const GET = apiRoute({ feature: "calendar_ics" }, async (request, user) => {
   const url = new URL(request.url);
   const id = url.searchParams.get("id");
   if (!id) {
@@ -32,4 +22,4 @@ export async function GET(request: Request) {
       "Content-Disposition": `attachment; filename="${followUp.id}.ics"`,
     },
   });
-}
+});

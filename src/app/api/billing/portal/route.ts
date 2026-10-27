@@ -1,21 +1,11 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { getUserById } from "@/lib/store";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ rate: { bucket: "billing", max: 10, windowMs: 10 * 60_000 } }, async (request, user) => {
   if (!isStripeConfigured()) {
     return NextResponse.json(
       { error: "stripe_not_configured" },
@@ -39,4 +29,4 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ url: session.url });
-}
+});

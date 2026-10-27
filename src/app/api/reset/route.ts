@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server";
 import { resetStore } from "@/lib/store";
-import { AuthError, requireUserForApi } from "@/lib/auth";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
 // Dev helper: wipe the current user's workspace back to the seed state.
-export async function POST() {
-  try {
-    const user = requireUserForApi();
-    const fresh = resetStore(user.id);
-    return NextResponse.json({ ok: true, snapshot: fresh });
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-}
+export const POST = apiRoute({ rate: { bucket: "reset", max: 3, windowMs: 15 * 60_000 } }, async (_request, user) => {
+  const fresh = resetStore(user.id);
+  return NextResponse.json({ ok: true, snapshot: fresh });
+});

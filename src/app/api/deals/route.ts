@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createDeal, listDeals, updateDeal } from "@/lib/store";
 import { AuthError, requireUserForApi } from "@/lib/auth";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -37,7 +38,7 @@ const UpdateSchema = z.object({
 
 export async function GET() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     return NextResponse.json({ deals: listDeals(user.id) });
   } catch (err) {
     if (err instanceof AuthError) {
@@ -47,17 +48,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({}, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = CreateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -68,19 +59,9 @@ export async function POST(request: Request) {
   }
   const deal = createDeal(user.id, parsed.data);
   return NextResponse.json({ deal }, { status: 201 });
-}
+});
 
-export async function PATCH(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const PATCH = apiRoute({}, async (request, user) => {
   const payload = await request.json().catch(() => null);
   const parsed = UpdateSchema.safeParse(payload);
   if (!parsed.success) {
@@ -93,4 +74,4 @@ export async function PATCH(request: Request) {
   const deal = updateDeal(user.id, id, rest);
   if (!deal) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ deal });
-}
+});

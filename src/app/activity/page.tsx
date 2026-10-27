@@ -26,10 +26,10 @@ type ActivityEntry =
   | { kind: "deal_completed"; at: string; data: { id: string; title: string; amount: number; currency: string; contactName?: string } }
   | { kind: "contact_added"; at: string; data: { id: string; name: string; email: string; company?: string } };
 
-export default function ActivityPage() {
+export default async function ActivityPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

@@ -2,24 +2,11 @@ import { NextResponse } from "next/server";
 import { processAllUnprocessed, processEmail } from "@/lib/pipeline";
 import { getEmail } from "@/lib/store";
 import { enqueueUnprocessedEmails } from "@/lib/jobs";
-import { AuthError, requireUserForApi } from "@/lib/auth";
-import { trialGuardResponse } from "@/lib/trialGuard";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
-  const blocked = trialGuardResponse(user);
-  if (blocked) return blocked;
+export const POST = apiRoute({ rate: { bucket: "process", max: 10, windowMs: 60_000 } }, async (request, user) => {
 
   let emailId: string | undefined;
   try {
@@ -52,4 +39,4 @@ export async function POST(request: Request) {
 
   const results = await processAllUnprocessed(user.id);
   return NextResponse.json({ processed: results.length, results });
-}
+});

@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function ForgotPasswordPage() {
-  if (getCurrentUser()) redirect("/");
+export default async function ForgotPasswordPage() {
+  if (await getCurrentUser()) redirect("/");
   return <ForgotPasswordForm />;
 }

@@ -11,12 +11,11 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function NewInvoicePage({
-  searchParams,
-}: {
-  searchParams?: { dealId?: string; type?: string };
+export default async function NewInvoicePage(props: {
+  searchParams?: Promise<{ dealId?: string; type?: string }>;
 }) {
-  const user = requireUser();
+  const searchParams = await props.searchParams;
+  const user = await requireUser();
   const contacts = listContacts(user.id).map((c) => ({
     id: c.id,
     name: c.name,

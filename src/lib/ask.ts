@@ -10,6 +10,7 @@ import {
 import { computeWinRate, findAtRiskDeals, computeStageBreakdown } from "./reports";
 import { isAIConfigured } from "./ai";
 import { checkAiBudget, logAiUsage, type UsageLike } from "./aiUsage";
+import { chargePaid, GuardError } from "./guard";
 import type { User } from "./types";
 import { OPEN_DEAL_STAGES } from "./types";
 
@@ -151,6 +152,13 @@ export async function askQuestion(
       answer:
         "Your weekly AI budget has been exceeded. The ask box will be available again when the budget window resets.",
     };
+  }
+
+  try {
+    chargePaid(user, "ai");
+  } catch (err) {
+    if (err instanceof GuardError) return { answer: err.message };
+    throw err;
   }
 
   const context = buildCrmContext(user);

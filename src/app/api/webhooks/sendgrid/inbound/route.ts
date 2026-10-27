@@ -3,12 +3,13 @@ import {
   createEmail,
   findFollowUpBySentMessageId,
   findUserByInboundAddress,
-  getFirstUser,
   updateEmail,
 } from "@/lib/store";
+import type { User } from "@/lib/types";
 import { processEmail } from "@/lib/pipeline";
 import { enqueueEmailProcessing } from "@/lib/jobs";
 import {
+  inboundRecipients,
   verifyInboundAuth,
   type SendGridInboundPayload,
 } from "@/lib/sendgrid";
@@ -38,10 +39,6 @@ export async function POST(request: Request) {
     // SendGrid Inbound Parse sends multipart/form-data
     const formData = await request.formData();
     const envelope = formData.get("envelope") as string | null;
-    let parsedEnvelope: { from?: string; to?: string[] } = {};
-    try {
-      parsedEnvelope = envelope ? JSON.parse(envelope) : {};
-    } catch {}
 
     const fromField = (formData.get("from") as string) || "";
     const fromMatch = fromField.match(/<([^>]+)>/);
@@ -52,7 +49,8 @@ export async function POST(request: Request) {
     payload = {
       from: fromEmail,
       fromName,
-      to: (formData.get("to") as string) || parsedEnvelope.to?.[0] || "",
+      to: (formData.get("to") as string) || "",
+      cc: (formData.get("cc") as string) || undefined,
       subject: (formData.get("subject") as string) || "",
       text: (formData.get("text") as string) || undefined,
       html: (formData.get("html") as string) || undefined,
@@ -77,37 +75,55 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!payload.from || !payload.to || !payload.subject) {
+  const recipients = inboundRecipients(payload);
+  if (!payload.from || recipients.length === 0 || !payload.subject) {
     return NextResponse.json(
       { error: "missing_required_fields" },
       { status: 400 }
     );
   }
 
-  // Route to the right user by matching the To address
-  const toAddress = payload.to.includes("<")
-    ? payload.to.match(/<([^>]+)>/)?.[1] || payload.to
-    : payload.to;
+  // Route on addresses a user owns. Every matching user gets their own
+  // copy (one message can be addressed to several workspaces). Mail that
+  // matches nobody is dropped: there is deliberately no default account,
+  // because guessing would put one customer's mail in another's inbox.
+  const owners = new Map<string, User>();
+  for (const address of recipients) {
+    const user = findUserByInboundAddress(address);
+    if (user) owners.set(user.id, user);
+  }
 
-  const owner =
-    findUserByInboundAddress(toAddress) ?? getFirstUser();
-
-  if (!owner) {
-    return NextResponse.json(
-      { error: "no_workspace_configured" },
-      { status: 503 }
+  if (owners.size === 0) {
+    console.warn(
+      `[sendgrid inbound] no workspace for ${recipients.join(", ")}; dropped`
     );
+    // 200 so SendGrid doesn't retry a message nobody will ever claim.
+    return NextResponse.json({ ok: true, delivered: 0 });
   }
 
   const body =
     payload.text?.trim() ||
     stripHtml(payload.html || "") ||
     "(empty body)";
+  const headerTo = payload.to.match(/<([^>]+)>/)?.[1] || payload.to;
 
+  const delivered = [];
+  for (const owner of owners.values()) {
+    delivered.push(await deliver(owner, payload, body, headerTo || owner.inboundAddress || ""));
+  }
+  return NextResponse.json({ ok: true, delivered: delivered.length, results: delivered });
+}
+
+async function deliver(
+  owner: User,
+  payload: SendGridInboundPayload,
+  body: string,
+  to: string
+) {
   const email = createEmail(owner.id, {
     from: payload.from,
     fromName: payload.fromName,
-    to: toAddress,
+    to,
     subject: payload.subject,
     body,
   });
@@ -129,18 +145,15 @@ export async function POST(request: Request) {
 
   if (asyncMode()) {
     const job = enqueueEmailProcessing(owner.id, email.id);
-    return NextResponse.json({ ok: true, emailId: email.id, jobId: job.id });
+    return { emailId: email.id, jobId: job.id };
   }
 
   try {
     const result = await processEmail(owner.id, email);
-    return NextResponse.json({ ok: true, emailId: email.id, result });
+    return { emailId: email.id, result };
   } catch (err) {
     console.error("sendgrid inbound pipeline failed:", err);
-    return NextResponse.json(
-      { ok: true, emailId: email.id, processed: false },
-      { status: 200 }
-    );
+    return { emailId: email.id, processed: false };
   }
 }
 

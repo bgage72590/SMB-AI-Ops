@@ -18,12 +18,11 @@ export const dynamic = "force-dynamic";
 
 const PER_PAGE = 25;
 
-export default function ClientsPage({
-  searchParams,
-}: {
-  searchParams?: { page?: string; q?: string };
+export default async function ClientsPage(props: {
+  searchParams?: Promise<{ page?: string; q?: string }>;
 }) {
-  const user = requireUser();
+  const searchParams = await props.searchParams;
+  const user = await requireUser();
   const allContacts = listContacts(user.id);
   const deals = listDeals(user.id);
 

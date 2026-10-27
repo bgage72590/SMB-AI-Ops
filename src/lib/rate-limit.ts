@@ -68,13 +68,20 @@ export function checkRateLimit(
 }
 
 /**
- * Extract the client IP from a Next.js Request. Checks common proxy
- * headers in order of trust, falling back to "unknown".
+ * The client IP as seen by our own reverse proxy.
+ *
+ * X-Forwarded-For is a list each proxy appends to, so only the entries
+ * our proxies added can be trusted; anything to their left was sent by
+ * the client and can be anything. With TRUSTED_PROXY_HOPS proxies in
+ * front of the app (default 1: Caddy, see docs/deployment.md) the client
+ * is the entry that many places from the right.
  */
 export function getClientIp(request: Request): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
+  const hops = Math.max(1, Number(process.env.TRUSTED_PROXY_HOPS) || 1);
+  const chain = (request.headers.get("x-forwarded-for") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (chain.length > 0) return chain[Math.max(0, chain.length - hops)];
+  return request.headers.get("x-real-ip") || "unknown";
 }

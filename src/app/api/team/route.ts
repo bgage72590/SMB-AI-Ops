@@ -9,6 +9,7 @@ import {
   logAudit,
   removeWorkspaceMember,
 } from "@/lib/store";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ const RemoveSchema = z.object({
 export async function GET() {
   let user;
   try {
-    user = requireUserForApi();
+    user = await requireUserForApi();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.code }, { status: err.status });
@@ -60,17 +61,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const POST = apiRoute({ feature: "team_members" }, async (request, user) => {
   if (!user.workspaceId) {
     return NextResponse.json({ error: "no_workspace" }, { status: 400 });
   }
@@ -103,19 +94,9 @@ export async function POST(request: Request) {
   );
 
   return NextResponse.json({ invite }, { status: 201 });
-}
+});
 
-export async function DELETE(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const DELETE = apiRoute({}, async (request, user) => {
   if (!user.workspaceId) {
     return NextResponse.json({ error: "no_workspace" }, { status: 400 });
   }
@@ -137,4 +118,4 @@ export async function DELETE(request: Request) {
   }
 
   return NextResponse.json({ removed });
-}
+});

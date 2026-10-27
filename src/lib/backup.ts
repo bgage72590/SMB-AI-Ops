@@ -42,14 +42,14 @@ export async function runBackup(): Promise<BackupResult> {
     return { ok: false, error: "Backup S3 credentials not configured." };
   }
 
-  const dbPath = path.join(dataDir(), "store.sqlite");
+  const dbPath = path.join(/* turbopackIgnore: true */ dataDir(), "store.sqlite");
   if (!fs.existsSync(dbPath)) {
     return { ok: false, error: `Database not found at ${dbPath}` };
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupFileName = `backup-${timestamp}.sqlite`;
-  const backupPath = path.join(dataDir(), backupFileName);
+  const backupPath = path.join(/* turbopackIgnore: true */ dataDir(), backupFileName);
 
   try {
     execFileSync("sqlite3", [dbPath, `.backup '${backupPath}'`], {

@@ -8,12 +8,8 @@ export const dynamic = "force-dynamic";
 /**
  * Nightly cron that backs up the SQLite database to S3.
  *
- * Vercel cron example (vercel.json):
- * {
- *   "crons": [
- *     { "path": "/api/jobs/backup", "schedule": "0 3 * * *" }
- *   ]
- * }
+ * Runs automatically from the in-process scheduler (src/lib/scheduler.ts).
+ * This route is a manual trigger: `Authorization: Bearer $CRON_SECRET`.
  */
 export async function POST(request: Request) {
   if (!verifyCronSecret(request)) {

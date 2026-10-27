@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifySlackSignature, isSlackEventsConfigured } from "@/lib/slack";
-import { createEmail } from "@/lib/store";
-import { getFirstUser } from "@/lib/store";
+import { createEmail, findUserBySlackChannel } from "@/lib/store";
 
 export const runtime = "nodejs";
 
@@ -10,7 +9,8 @@ export const runtime = "nodejs";
  *
  * Receives Slack Events API payloads (messages from a connected channel).
  * Converts them into inbox emails so the pipeline can triage them like
- * any other inbound message.
+ * any other inbound message. A message goes to the workspace that
+ * installed Slack for that exact team + channel, or nowhere.
  *
  * Handles:
  * - url_verification challenge (required by Slack on setup)
@@ -50,16 +50,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const owner = getFirstUser();
+    const owner =
+      typeof payload.team_id === "string" && typeof event.channel === "string"
+        ? findUserBySlackChannel(payload.team_id, event.channel)
+        : undefined;
     if (!owner) {
-      return NextResponse.json({ error: "no_owner" }, { status: 500 });
+      // Not a channel anyone connected. Ack so Slack doesn't retry.
+      return NextResponse.json({ ok: true });
     }
 
     createEmail(owner.id, {
       from: `slack:${event.user || "unknown"}`,
       fromName: event.user_profile?.real_name || event.user || "Slack User",
       to: owner.email,
-      subject: `Slack message in #${event.channel || "general"}`,
+      subject: `Slack message in #${owner.slackChannelName || event.channel}`,
       body: event.text || "(empty message)",
       receivedAt: event.ts
         ? new Date(parseFloat(event.ts) * 1000).toISOString()

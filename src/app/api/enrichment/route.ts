@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import {
   getContact,
   getEnrichmentCache,
@@ -11,6 +10,7 @@ import {
   enrichContact,
   isEnrichmentConfigured,
 } from "@/lib/enrichment";
+import { apiRoute, chargePaid } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -26,22 +26,12 @@ const EnrichSchema = z.object({
  * enrichment provider. Results are cached by email so repeat lookups
  * for the same person don't cost money.
  */
-export async function POST(request: Request) {
+export const POST = apiRoute({ feature: "lead_enrichment", rate: { bucket: "enrichment", max: 30, windowMs: 10 * 60_000 } }, async (request, user) => {
   if (!isEnrichmentConfigured()) {
     return NextResponse.json(
       { error: "enrichment_not_configured" },
       { status: 503 }
     );
-  }
-
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
   }
 
   const payload = await request.json().catch(() => null);
@@ -66,6 +56,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ enrichment: cached, source: "cache" });
   }
 
+  chargePaid(user, "enrichment");
   const result = await enrichContact(contact.email);
   if (!result) {
     return NextResponse.json(
@@ -84,4 +75,4 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ enrichment: result, source: "live" });
-}
+});

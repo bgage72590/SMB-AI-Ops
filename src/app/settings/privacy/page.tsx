@@ -7,10 +7,10 @@ import { BlocklistManager } from "@/components/BlocklistManager";
 
 export const dynamic = "force-dynamic";
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

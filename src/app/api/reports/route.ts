@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUserForApi } from "@/lib/auth";
 import { generatePipelineReport } from "@/lib/reports";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -8,17 +8,7 @@ export const runtime = "nodejs";
  * GET /api/reports
  * Returns the full pipeline report for the authenticated user.
  */
-export async function GET() {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
+export const GET = apiRoute({ feature: "pipeline_reports" }, async (_request, user) => {
   const report = generatePipelineReport(user.id);
   return NextResponse.json(report);
-}
+});

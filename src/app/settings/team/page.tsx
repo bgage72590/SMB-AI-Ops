@@ -12,10 +12,10 @@ import { TeamManager } from "@/components/TeamManager";
 
 export const dynamic = "force-dynamic";
 
-export default function TeamPage() {
+export default async function TeamPage() {
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

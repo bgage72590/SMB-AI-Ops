@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getContact, getFollowUp, logAudit, updateFollowUp } from "@/lib/store";
 import { isEmailConfigured, sendEmail } from "@/lib/sendgrid";
-import { isTwilioConfigured, sendSms } from "@/lib/twilio";
-import { AuthError, requireUserForApi } from "@/lib/auth";
-import { trialGuardResponse } from "@/lib/trialGuard";
+import { canSendSms, sendSms, smsUnavailableReason } from "@/lib/twilio";
+import { apiRoute, chargePaid, requireFeature } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -15,19 +14,7 @@ const SendSchema = z.object({ id: z.string().min(1) });
 //
 // Dispatches the follow-up via the appropriate channel (email or SMS).
 // Email goes through SendGrid; SMS goes through Twilio.
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
-  const blocked = trialGuardResponse(user);
-  if (blocked) return blocked;
+export const POST = apiRoute({ rate: { bucket: "send", max: 30, windowMs: 10 * 60_000 } }, async (request, user) => {
 
   const payload = await request.json().catch(() => null);
   const parsed = SendSchema.safeParse(payload);
@@ -49,13 +36,10 @@ export async function POST(request: Request) {
   }
 
   if (followUp.channel === "sms") {
-    if (!isTwilioConfigured()) {
+    requireFeature(user, "sms_followups");
+    if (!canSendSms(user)) {
       return NextResponse.json(
-        {
-          error: "twilio_not_configured",
-          message:
-            "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER in .env to enable SMS.",
-        },
+        { error: "twilio_not_configured", message: smsUnavailableReason(user) },
         { status: 412 }
       );
     }
@@ -65,8 +49,13 @@ export async function POST(request: Request) {
         { status: 422 }
       );
     }
+    chargePaid(user, "sms");
     try {
-      const result = await sendSms({ to: contact.phone, body: followUp.draft });
+      const result = await sendSms({
+        to: contact.phone,
+        from: user.smsNumber!,
+        body: followUp.draft,
+      });
       const updated = updateFollowUp(user.id, followUp.id, {
         status: "sent",
         sentAt: new Date().toISOString(),
@@ -91,6 +80,7 @@ export async function POST(request: Request) {
     );
   }
 
+  chargePaid(user, "email");
   try {
     const result = await sendEmail({
       to: contact.email,
@@ -109,4 +99,4 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : "send_failed";
     return NextResponse.json({ error: "send_failed", message }, { status: 502 });
   }
-}
+});

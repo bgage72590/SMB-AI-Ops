@@ -9,7 +9,7 @@ import {
 } from "@/lib/store";
 import { draftFollowUp } from "@/lib/ai";
 import { AuthError, requireUserForApi } from "@/lib/auth";
-import { trialGuardResponse } from "@/lib/trialGuard";
+import { apiRoute } from "@/lib/guard";
 
 export const runtime = "nodejs";
 
@@ -28,7 +28,7 @@ const UpdateSchema = z.object({
 
 export async function GET() {
   try {
-    const user = requireUserForApi();
+    const user = await requireUserForApi();
     return NextResponse.json({ followUps: listFollowUps(user.id) });
   } catch (err) {
     if (err instanceof AuthError) {
@@ -38,19 +38,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
-  const postBlocked = trialGuardResponse(user);
-  if (postBlocked) return postBlocked;
+export const POST = apiRoute({}, async (request, user) => {
 
   const payload = await request.json().catch(() => null);
   const parsed = CreateSchema.safeParse(payload);
@@ -76,6 +64,7 @@ export async function POST(request: Request) {
     contact,
     deal,
     context: parsed.data.context,
+    userId: user.id,
   });
 
   const followUp = createFollowUp(user.id, {
@@ -87,21 +76,9 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ followUp }, { status: 201 });
-}
+});
 
-export async function PATCH(request: Request) {
-  let user;
-  try {
-    user = requireUserForApi();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.code }, { status: err.status });
-    }
-    throw err;
-  }
-
-  const patchBlocked = trialGuardResponse(user);
-  if (patchBlocked) return patchBlocked;
+export const PATCH = apiRoute({}, async (request, user) => {
 
   const payload = await request.json().catch(() => null);
   const parsed = UpdateSchema.safeParse(payload);
@@ -116,4 +93,4 @@ export async function PATCH(request: Request) {
   if (!followUp)
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ followUp });
-}
+});

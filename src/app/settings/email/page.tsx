@@ -9,14 +9,13 @@ import { EmailConnectionActions } from "@/components/EmailConnectionActions";
 
 export const dynamic = "force-dynamic";
 
-export default function EmailSettingsPage({
-  searchParams,
-}: {
-  searchParams?: { connected?: string; error?: string };
+export default async function EmailSettingsPage(props: {
+  searchParams?: Promise<{ connected?: string; error?: string }>;
 }) {
+  const searchParams = await props.searchParams;
   let user;
   try {
-    user = requireUser();
+    user = await requireUser();
   } catch {
     redirect("/login");
   }

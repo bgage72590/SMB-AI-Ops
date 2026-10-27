@@ -7,15 +7,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Drain the background job queue. Designed to be poked every 60 seconds
- * by a scheduler (Vercel cron, uptimerobot, a Cloudflare Worker, etc.)
- * so long-running work doesn't block request handlers.
+ * Drain the background job queue. The in-process scheduler
+ * (src/lib/scheduler.ts) does this every minute; this route is a manual
+ * trigger: `Authorization: Bearer $CRON_SECRET`.
  *
  * Each call processes at most ~10 jobs or runs for 50 seconds, whichever
- * comes first, leaving headroom under serverless platform timeouts.
- *
- * Example vercel.json entry:
- *   { "path": "/api/jobs/run", "schedule": "* * * * *" }
+ * comes first.
  */
 export async function POST(request: Request) {
   if (!verifyCronSecret(request)) {
